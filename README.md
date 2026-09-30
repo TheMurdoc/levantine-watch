@@ -1,6 +1,6 @@
 # Levantine Watch
 
-Open-source intelligence snapshot of Cyprus, the Levant and the Eastern Mediterranean, as a single-file dashboard.
+Near-live open-source intelligence dashboard for Cyprus, the Levant and the Eastern Mediterranean.
 
 **Live:** https://themurdoc.github.io/levantine-watch/
 
@@ -19,6 +19,26 @@ Open-source intelligence snapshot of Cyprus, the Levant and the Eastern Mediterr
 
 Click any marker, hexagon or table row to get its **Open in …** buttons. The **Open in source app on click** chip makes a click jump straight to the origin app instead.
 
+## Live data
+
+A scheduled GitHub Actions job (`.github/workflows/live.yml`) runs `collector/collect.py` about every 10 minutes and redeploys the site with a fresh `data/live.json`:
+
+| Layer | Source | Key needed |
+|---|---|---|
+| Aircraft | airplanes.live (falls back to adsb.lol, adsb.fi) | none |
+| GNSS interference | aircraft-reported NACp from the same ADS-B data, per H3 hexagon, rolling 6 h window | none |
+| Vessels | aisstream.io live AIS (90 s listen per run, positions kept 60 min) | `AISSTREAM_API_KEY` |
+| Headlines | Cyprus Mail, in-cyprus, BBC Middle East, Al Jazeera RSS (+ NewsAPI if set) | optional `NEWSAPI_KEY` |
+
+Infrastructure, places, cell and Wi-Fi layers stay a static snapshot. The page checks for new data every minute and reloads itself, keeping your map view (if a panel is open it shows **New data · click to refresh** instead).
+
+### One-time setup
+1. **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+2. Free aisstream.io key (sign in with GitHub at aisstream.io → API Keys), then **Settings → Secrets and variables → Actions → New repository secret**: `AISSTREAM_API_KEY`. Optional: `NEWSAPI_KEY`.
+3. **Actions → Live data → Run workflow** for the first run.
+
+Notes: scheduled runs can start late and GitHub pauses schedules after 60 days without repository activity (re-enable in the Actions tab). The ADS-B APIs are free for non-commercial use and rate-limited (the collector makes 4 requests per run). Run locally with `pip install -r collector/requirements.txt && python collector/collect.py --out data`, then serve the folder (`python -m http.server`).
+
 ## Aircraft and vessel symbols
 
 - **Aircraft**: the icon comes from the ICAO type code (wide-body, narrow-body, regional, turboprop, business jet, light, helicopter, fighter, military transport, tanker, AEW/ISR, drone). Known military/state callsigns and serials switch the icon to the military colour. The icon is rotated to the aircraft's track and sized by class.
@@ -33,11 +53,11 @@ Click any marker, hexagon or table row to get its **Open in …** buttons. The *
 
 ## Caveats
 
-This is a static snapshot (28 Sep 2026), not a live feed. GNSS degradation is consistent with jamming or spoofing but does not prove either. Places are commercial listings, not verified infrastructure. Cross-check everything before treating it as ground truth.
+Live layers are collected every ~10 minutes and can be minutes old; the other layers are a 28 Sep 2026 snapshot. GNSS degradation is consistent with jamming or spoofing but does not prove either. Places are commercial listings, not verified infrastructure. Cross-check everything before treating it as ground truth.
 
 ## Run locally
 
-It's one HTML file with no build step: open `index.html` in a browser, or run `python3 -m http.server` and go to http://localhost:8000.
+`index.html` works on its own (it falls back to the embedded 28 Sep snapshot when `data/live.json` is missing). For live data locally, run the collector as above and serve the folder.
 
 ---
 Built by [@TheMurdoc](https://github.com/TheMurdoc).

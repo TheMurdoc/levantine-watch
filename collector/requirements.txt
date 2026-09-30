@@ -1,0 +1,4 @@
+requests>=2.31
+websockets>=12
+h3>=4.1
+feedparser>=6.0
