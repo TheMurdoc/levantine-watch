@@ -29,6 +29,9 @@ from pathlib import Path
 
 import requests
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import extra  # noqa: E402
+
 # Map extent of the dashboard (matches the page's linear lat/lon grid).
 LAT_MIN, LAT_MAX = 29.0, 37.3
 LON_MIN, LON_MAX = 32.0, 40.2
@@ -294,8 +297,8 @@ def fetch_vessels(state: dict, seconds: int) -> tuple[list[dict] | None, dict]:
 
 
 # ------------------------------------------------------------------ news
-def fetch_news(limit: int = 14) -> tuple[list[dict] | None, dict]:
-    items = []
+def fetch_news(limit: int = 20, extra: list[dict] | None = None):
+    items = list(extra or [])
     errors = []
     try:
         import feedparser
@@ -315,7 +318,7 @@ def fetch_news(limit: int = 14) -> tuple[list[dict] | None, dict]:
                     continue
                 t = e.get("published_parsed") or e.get("updated_parsed")
                 pub = datetime(*t[:6], tzinfo=timezone.utc) if t else now_utc()
-                items.append({"title": title, "source": src, "url": e.get("link"), "publishedAt": iso(pub)})
+                items.append({"title": title, "source": src, "url": e.get("link"), "publishedAt": iso(pub), "via": "rss"})
         except Exception as ex:
             errors.append(f"{src}: {ex.__class__.__name__}")
     key = os.environ.get("NEWSAPI_KEY", "").strip()
@@ -334,9 +337,10 @@ def fetch_news(limit: int = 14) -> tuple[list[dict] | None, dict]:
         k = re.sub(r"\W+", "", (it["title"] or "").lower())[:80]
         if k and k not in seen and it.get("url"):
             seen.add(k); out.append(it)
+    allitems = out
     out = out[:limit]
-    note = f"{len(out)} regional headlines (RSS{' + NewsAPI' if key else ''})" + (f"; failed: {', '.join(errors)}" if errors else "")
-    return (out or None), {"name": "Headlines", "note": note, "ok": bool(out), "live": True}
+    note = f"{len(out)} regional headlines (RSS{' + GDELT' if extra else ''}{' + NewsAPI' if key else ''})" + (f"; failed: {', '.join(errors)}" if errors else "")
+    return (out or None), {"name": "Headlines", "note": note, "ok": bool(out), "live": True}, allitems
 
 
 # ------------------------------------------------------------------ main
@@ -366,22 +370,55 @@ def main() -> int:
         live["gnss"] = gnss
     except Exception as e:
         st = {"name": "GNSS (ADS-B NACp)", "note": f"failed: {e}", "ok": False, "live": True}
+    wb, wst = extra.fetch_wingbits_gnss(state)
+    if wb and wb.get("hexes"):
+        live["gnss"] = wb  # Wingbits grid preferred; the ADS-B NACp window keeps accumulating as a fallback
+        st["note"] += " (fallback; Wingbits in use)"
     live["sources"].append(st)
+    if wst:
+        live["sources"].append(wst)
+    for s_ in extra.enrich_flights(flights, state):
+        live["sources"].append(s_)
 
     vessels, st = fetch_vessels(state, listen)
     if vessels is not None:
         live["vessels"] = vessels
     live["sources"].append(st)
+    dd, ddst = extra.fetch_datadocked_area(state)
+    if dd:
+        have = {v["mmsi"] for v in (vessels or [])}
+        extra_v = [dict(v, flag=flag_of(v["mmsi"])) for v in dd if v["mmsi"] not in have]  # aisstream position wins when both have the ship
+        vessels = (vessels or []) + extra_v
+        live["vessels"] = vessels
+    if ddst:
+        live["sources"].append(ddst)
+    for s_ in extra.enrich_vessels(vessels or [], state):
+        live["sources"].append(s_)
 
-    news, st = fetch_news()
+    gdelt, gst = extra.fetch_gdelt()
+    news, st, allnews = fetch_news(extra=gdelt)
     if news:
         live["news"] = news
     live["sources"].append(st)
+    live["sources"].append(gst)
+    live["events"] = extra.events_from_headlines(allnews)
+
+    for key, fn in (("hotspots", extra.fetch_firms), ("outages", extra.fetch_outages), ("conflict", extra.fetch_acled)):
+        try:
+            data_, st_ = fn(state)
+        except Exception as e:  # never let one source break the run
+            data_, st_ = None, {"name": key, "note": f"failed: {e}", "ok": False, "live": True}
+        if data_ is not None:
+            live[key] = data_
+        live["sources"].append(st_)
 
     state["updated"] = iso(t_now)
     (out / "live.json").write_text(json.dumps(live, separators=(",", ":"), ensure_ascii=False))
     (out / "state.json").write_text(json.dumps(state, separators=(",", ":"), ensure_ascii=False))
-    log("wrote", out / "live.json", f"flights={len(flights)} vessels={len(vessels or [])} hexes={len((live.get('gnss') or {}).get('hexes', []))} news={len(news or [])}")
+    log("wrote", out / "live.json", f"flights={len(flights)} vessels={len(vessels or [])} hexes={len((live.get('gnss') or {}).get('hexes', []))} news={len(news or [])} "
+        f"events={len(live.get('events', []))} hotspots={len(live.get('hotspots') or [])} outages={len(live.get('outages') or [])} conflict={len(live.get('conflict') or [])}")
+    for s_ in live["sources"]:
+        log(f"  {'OK ' if s_.get('ok') else '-- '} {s_['name']}: {s_['note']}")
     return 0
 
 

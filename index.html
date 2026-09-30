@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="description" content="Levantine Watch: near-live open-source view of flights, vessels, GNSS interference, infrastructure and cellular data around Cyprus and the Eastern Mediterranean.">
+<meta name="description" content="Levantine Watch: near-live open-source view of flights, vessels, GNSS interference, hotspots, outages, conflict events and infrastructure around Cyprus and the Eastern Mediterranean.">
 <title>Levantine Watch</title>
 <meta name="referrer" content="no-referrer">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -111,6 +111,19 @@ button{font:inherit}
 #map[data-outline="minimal"] .land{stroke:#4a432d;stroke-width:.6}
 #map[data-outline="minimal"] .land-cyprus{stroke:#6b6140;stroke-width:.8}
 .hex{cursor:pointer}
+.m-fire path{fill:#ff6a2b;stroke:#2a0a00;stroke-width:.5;vector-effect:non-scaling-stroke}
+.m-event path{fill:#e8d58a;stroke:#0a1119;stroke-width:.6;vector-effect:non-scaling-stroke}
+.m-conflict path{stroke:#0a1119;stroke-width:.5;vector-effect:non-scaling-stroke}
+.m-fire>*,.m-event>*,.m-conflict>*{transform:scale(var(--zs,1))}
+.land.outage{stroke:#ff4d4d!important;stroke-dasharray:5 3;stroke-width:1.8!important}
+.outrow{padding-block:8px;border-bottom:1px solid var(--line-soft);font-size:12px}
+.outrow:last-child{border-bottom:none}
+.outrow b{color:var(--ink);font-weight:600}
+.outrow .when{font-family:var(--mono);font-size:10px;color:var(--ink-faint);display:block;margin-top:2px}
+.outrow .tag{font-family:var(--mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;padding:2px 6px;border-radius:999px;margin-left:6px;background:rgba(255,77,77,.16);color:#ff8a8a}
+.outrow .tag.ended{background:rgba(92,108,125,.2);color:var(--ink-dim)}
+.outrow a{color:var(--accent);font-size:11px;text-decoration:none}
+.news-item .via{font-family:var(--mono);font-size:9px;color:var(--accent);margin-left:6px}
 .hex.sel-on{stroke:var(--accent);stroke-width:1.6;vector-effect:non-scaling-stroke}
 .otoast{position:absolute;right:52px;bottom:12px;font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink);background:rgba(10,17,25,.88);border:1px solid var(--line);border-radius:6px;padding:6px 9px;pointer-events:none;transition:opacity .25s;opacity:0}
 .otoast.on{opacity:1}
@@ -302,6 +315,9 @@ a.tbtn{text-decoration:none;font-size:9.5px;letter-spacing:.04em}
         <g id="layer-celltower"></g>
         <g id="layer-wireless"></g>
         <g id="layer-places"></g>
+        <g id="layer-conflict"></g>
+        <g id="layer-fires"></g>
+        <g id="layer-events"></g>
         <g id="layer-vessels"></g>
         <g id="layer-flights"></g>
       </g>
@@ -335,6 +351,12 @@ a.tbtn{text-decoration:none;font-size:9.5px;letter-spacing:.04em}
       <div class="hexrows" id="hex-list"></div>
     </div>
     <div data-view="gnss-table" hidden class="tblwrap"></div>
+  </section>
+
+  <section class="card" id="card-outages" hidden>
+    <h2>Internet outages <span class="n" id="out-n"></span></h2>
+    <p class="note">Cloudflare Radar outage reports for Cyprus and neighbouring countries, last 14 days. Countries with an ongoing outage get a dashed red outline on the map.</p>
+    <div id="out-list" class="newswrap"></div>
   </section>
 
   <section class="card">
@@ -386,6 +408,7 @@ a.tbtn{text-decoration:none;font-size:9.5px;letter-spacing:.04em}
     <div class="symgrid">
       <div><h3 class="symh">Aircraft <span class="sw"><i style="background:var(--ac-civ)"></i>civil</span><span class="sw"><i style="background:var(--ac-mil)"></i>military / state</span></h3><div class="symlist" id="sym-ac"></div></div>
       <div><h3 class="symh">Vessels</h3><div class="symlist" id="sym-vs"></div></div>
+      <div id="sym-ev-wrap" hidden><h3 class="symh">Events &amp; hazards</h3><div class="symlist" id="sym-ev"></div></div>
     </div>
   </section>
 
@@ -430,6 +453,8 @@ async function lwMergeLive(data) {
     got.gnss = j.gnss.window_h;
   }
   if (Array.isArray(j.news) && j.news.length) { data.news = j.news; got.news = true; }
+  for (const k of ['events', 'hotspots', 'conflict']) if (Array.isArray(j[k])) { data[k] = j[k].map(put); got[k] = true; }
+  if (Array.isArray(j.outages)) { data.outages = j.outages; got.outages = true; }
   if (Array.isArray(j.sources)) data.sources = j.sources.concat(data.sources.filter(s => LW_STATIC_SOURCES.includes(s.name)).map(s => Object.assign({}, s, {note: s.note + ' (static snapshot)'})));
   const g = new Date(j.generated);
   data.snapshot_date = g.toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
@@ -672,7 +697,7 @@ const gCoast = document.getElementById('layer-coast');
 /* coast halo is drawn under every land fill, so it only shows along coastlines, not inland borders */
 const LAND_ORDER = ['westbank', 'gaza', 'saudi']; Object.entries(data.land).sort((a, b) => LAND_ORDER.includes(b[0]) - LAND_ORDER.includes(a[0])).forEach(([name, paths]) => paths.forEach(d => {
   gCoast.appendChild(el('path', {class: 'coast-halo' + (name === 'cyprus' ? ' cy' : ''), d}));
-  gLand.appendChild(el('path', {class: 'land' + (name === 'cyprus' ? ' land-cyprus' : ''), d}));
+  gLand.appendChild(el('path', {class: 'land' + (name === 'cyprus' ? ' land-cyprus' : ''), d, 'data-c': name}));
 }));
 const gLabels = document.getElementById('layer-labels');
 const LABELS = [
@@ -898,11 +923,11 @@ function select(item) {
   const d = h('div', 'd'); item.lines.forEach(l => { d.appendChild(document.createTextNode(l)); d.appendChild(h('br')); }); selBox.appendChild(d);
   const mk = (l, txt) => { const a = h('a', null, txt); a.href = l.href; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.referrerPolicy = 'no-referrer'; return a; };
   const prim = h('div', 'prim'), links = h('div', 'links');
-  item.links.filter(l => l.primary).forEach(l => prim.appendChild(mk(l, 'Open in ' + l.label)));
+  item.links.filter(l => l.primary).forEach(l => prim.appendChild(mk(l, l.full || ('Open in ' + l.label))));
   item.links.filter(l => !l.primary).forEach(l => links.appendChild(mk(l, l.label)));
   if (prim.childNodes.length) selBox.appendChild(prim);
   if (links.childNodes.length) { selBox.appendChild(h('div', 'more', 'Cross-check')); selBox.appendChild(links); }
-  selBox.appendChild(h('div', 'src', 'Snapshot source: ' + item.source + '. ' + (item.note || 'Links open a live lookup on the named site; it may have changed since the snapshot.')));
+  selBox.appendChild(h('div', 'src', 'Source: ' + item.source + '. ' + (item.note || 'Links open a live lookup on the named site; it may have changed since the snapshot.')));
   hint.hidden = true; selBox.hidden = false;
   if (openMode) openOrigin(primaryOf(item));
 }
@@ -945,19 +970,76 @@ data.vessels.forEach((v, i) => {
   const c = v._c;
   const g = marker('layer-vessels-' + c.g, 'm-vessel', v.x, v.y, vesselGlyph(c), v.name || 'unnamed vessel', `${c.label} · ${c.group} · ${v.flag || '—'}${v.length ? ' · ' + v.length + ' m' : ''} · ${v.hrs != null ? v.hrs + ' h tracked' : (v.sog != null ? v.sog + ' kn' : 'live AIS')}`, () => select(items.vessel[i]));
   const idLine = v.mmsi ? `MMSI ${v.mmsi}${v.callsign ? ' · call sign ' + v.callsign : ''}${v.imo ? ' · IMO ' + v.imo : ''}${v.length ? ' · ' + v.length + ' m' : ''}` : 'identifiers not resolved';
-  items.vessel[i] = {marker: g, kind: 'Vessel · ' + c.group + ' · ' + c.label, title: v.name, lines: [idLine, [v.flag || '—', v.type_specific ? 'AIS ' + v.type_specific : 'AIS ' + nice(v.type), v.gear && nice(v.gear), v.dest && ('→ ' + v.dest)].filter(Boolean).join(' · '), [v.hrs != null ? v.hrs + ' h tracked' : null, v.sog != null ? v.sog + ' kn' : null, v.cog != null ? 'course ' + Math.round(v.cog) + '°' : null, v.age_min != null ? 'seen ' + (v.age_min < 1 ? 'just now' : Math.round(v.age_min) + ' min ago') : null, coord(latOf(v.y), lonOf(v.x))].filter(Boolean).join(' · ')], links: vesselLinks(v).concat([LINK.osm(v.x, v.y, 12)]), source: v.src || 'Global Fishing Watch AIS; identifiers via Datalastic', note: 'Vessel pages show the live AIS position, which will differ from the snapshot.'};
+  items.vessel[i] = {marker: g, kind: 'Vessel · ' + c.group + ' · ' + c.label, title: v.name, lines: [idLine, ...(v.dl ? [[v.dl.year_built && 'built ' + v.dl.year_built, v.dl.gross_tonnage && fmt(+v.dl.gross_tonnage) + ' GT', v.dl.deadweight && fmt(+v.dl.deadweight) + ' DWT', v.dl.home_port && 'home port ' + v.dl.home_port, 'details via ' + (v.dl.src || 'Datalastic')].filter(Boolean).join(' · ')] : []), [v.flag || '—', v.type_specific ? 'AIS ' + v.type_specific : 'AIS ' + nice(v.type), v.gear && nice(v.gear), v.dest && ('→ ' + v.dest)].filter(Boolean).join(' · '), [v.hrs != null ? v.hrs + ' h tracked' : null, v.sog != null ? v.sog + ' kn' : null, v.cog != null ? 'course ' + Math.round(v.cog) + '°' : null, v.age_min != null ? 'seen ' + (v.age_min < 1 ? 'just now' : Math.round(v.age_min) + ' min ago') : null, coord(latOf(v.y), lonOf(v.x))].filter(Boolean).join(' · ')], links: vesselLinks(v).concat([LINK.osm(v.x, v.y, 12)]), source: v.src || 'Global Fishing Watch AIS; identifiers via Datalastic', note: 'Vessel pages show the live AIS position, which will differ from the snapshot.'};
 });
+const routeTxt = f => f.route ? `${f.route.orig_iata || f.route.orig || '?'} → ${f.route.dest_iata || f.route.dest || '?'}` : '';
+const routeLine = f => f.route ? `${f.route.orig_city ? f.route.orig_city + ' ' : ''}${f.route.orig_iata || f.route.orig || '?'} → ${f.route.dest_city ? f.route.dest_city + ' ' : ''}${f.route.dest_iata || f.route.dest || '?'}${f.route.flight && f.route.flight !== f.callsign ? ' · flight ' + f.route.flight : ''}${f.route.op ? ' · ' + f.route.op : ''} · route via ${f.route.src}` : null;
 data.flights.forEach((f, i) => {
   const c = f._c;
-  const g = marker('layer-flights-' + c.cls, 'm-flight' + (c.mil ? ' mil' : ''), f.x, f.y, aircraftGlyph(c, f.trk), f.callsign || f.reg || 'unknown', `${c.label}${c.mil ? ' · military / state' : ''} · ${f.type || '—'} · ${fmt(f.alt)} ft · ${fmt(f.spd)} kt · heading ${f.trk == null ? '—' : f.trk + '°'}`, () => select(items.flight[i]));
-  items.flight[i] = {marker: g, kind: 'Aircraft · ' + c.label + (c.mil ? ' · military' : '') + ' · ' + (f.type || 'type unknown'), title: (f.callsign || 'no callsign') + (f.reg ? ' · ' + f.reg : ''), lines: [`${f.gnd ? 'on ground' : fmt(f.alt) + ' ft'} · ${fmt(f.spd)} kt · heading ${f.trk == null ? '—' : f.trk + '°'}${f.sq ? ' · squawk ' + f.sq : ''}`, [f.hex ? 'ICAO ' + f.hex.toUpperCase() : null, f.nacp != null ? 'NACp ' + f.nacp : null, coord(latOf(f.y), lonOf(f.x))].filter(Boolean).join(' · ')], links: flightLinks(f).concat([LINK.osm(f.x, f.y, 9)]), source: f.src || 'FlightRadar24 positions', note: 'Flightradar24 opens the live flight if still airborne, otherwise its latest history.'};
+  const g = marker('layer-flights-' + c.cls, 'm-flight' + (c.mil ? ' mil' : ''), f.x, f.y, aircraftGlyph(c, f.trk), f.callsign || f.reg || 'unknown', `${c.label}${c.mil ? ' · military / state' : ''} · ${f.type || '—'}${f.route ? ' · ' + routeTxt(f) : ''} · ${fmt(f.alt)} ft · ${fmt(f.spd)} kt · heading ${f.trk == null ? '—' : f.trk + '°'}`, () => select(items.flight[i]));
+  items.flight[i] = {marker: g, kind: 'Aircraft · ' + c.label + (c.mil ? ' · military' : '') + ' · ' + (f.type || 'type unknown'), title: (f.callsign || 'no callsign') + (f.reg ? ' · ' + f.reg : ''), lines: [`${f.gnd ? 'on ground' : fmt(f.alt) + ' ft'} · ${fmt(f.spd)} kt · heading ${f.trk == null ? '—' : f.trk + '°'}${f.sq ? ' · squawk ' + f.sq : ''}`, routeLine(f), [f.hex ? 'ICAO ' + f.hex.toUpperCase() : null, f.nacp != null ? 'NACp ' + f.nacp : null, coord(latOf(f.y), lonOf(f.x))].filter(Boolean).join(' · ')].filter(Boolean), links: flightLinks(f).concat([LINK.osm(f.x, f.y, 9)]), source: f.src || 'FlightRadar24 positions', note: 'Flightradar24 opens the live flight if still airborne, otherwise its latest history.'};
 });
+
+/* ---------- events, hotspots, conflict, outages (live collector) ---------- */
+data.events = data.events || []; data.hotspots = data.hotspots || []; data.conflict = data.conflict || []; data.outages = data.outages || null;
+const FLAME = 'M0,-4.2 C1.6,-2.2 2.8,-0.8 2.2,1.4 C1.8,3 0.8,3.6 0,3.6 C-0.8,3.6 -1.8,3 -2.2,1.4 C-2.6,-0.2 -1.2,-1 -0.6,-2.2 C-0.2,-1 0.2,-0.6 0.6,-0.4 C0.9,-1.8 0.4,-3 0,-4.2 Z';
+const BUBBLE = 'M-3.2,-3 H3.2 V1.6 H0.9 L-0.7,3.5 V1.6 H-3.2 Z';
+const BURST = 'M0,-3.6 L0.9,-1.2 L3.4,-1.6 L1.6,0.2 L2.6,2.8 L0,1.4 L-2.6,2.8 L-1.6,0.2 L-3.4,-1.6 L-0.9,-1.2 Z';
+const ACLED_COL = {'Battles': '#e5484d', 'Explosions/Remote violence': '#ff8a00', 'Violence against civilians': '#d6336c', 'Protests': '#4fa3ff', 'Riots': '#b58cff', 'Strategic developments': '#9aa5b1'};
+const ago = t => { if (!t) return ''; const m = Math.round((Date.now() - new Date(t).getTime()) / 60000); return m < 60 ? m + ' min ago' : m < 2880 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago'; };
+const utc = t => t ? String(t).replace('T', ' ').replace('Z', '').slice(0, 16) + ' UTC' : '';
+data.hotspots.forEach(p => {
+  const s = 0.75 + Math.min(1.1, Math.log10(1 + (p.frp || 0)) / 2);
+  const {la, lo} = LL(p.x, p.y);
+  marker('layer-fires', 'm-fire', p.x, p.y, el('path', {d: FLAME, transform: `scale(${s.toFixed(2)})`}), `Thermal hotspot · FRP ${p.frp} MW`, `${p.sat} · ${p.t} · ${p.dn === 'N' ? 'night' : 'day'} pass`,
+    g => select({marker: g, kind: 'Thermal hotspot · NASA FIRMS', title: `FRP ${p.frp} MW · ${p.sat}`, lines: [`detected ${p.t} · ${p.dn === 'N' ? 'night' : 'day'} pass · confidence ${p.conf || '—'}`, coord(latOf(p.y), lonOf(p.x))],
+      links: [lk('NASA FIRMS', `https://firms.modaps.eosdis.nasa.gov/map/#d:24hrs;@${lo},${la},12z`, true), lk('Sentinel Hub EO Browser', `https://apps.sentinel-hub.com/eo-browser/?zoom=13&lat=${la}&lng=${lo}`), LINK.gsat(p.x, p.y), LINK.osm(p.x, p.y, 15), LINK.osmQuery(p.x, p.y)],
+      source: 'NASA FIRMS near-real-time (VIIRS / MODIS)', note: 'A hotspot is a heat anomaly: wildfire, gas flare, industrial heat, a strike or burning debris. Check imagery before attributing a cause.'}));
+});
+data.conflict.forEach(c => {
+  const col = ACLED_COL[c.type] || '#9aa5b1', s = 0.8 + Math.min(1, Math.log10(1 + (c.fatalities || 0)) / 1.5);
+  marker('layer-conflict', 'm-conflict', c.x, c.y, el('path', {d: BURST, fill: col, transform: `scale(${s.toFixed(2)})`}), `${c.sub || c.type} · ${c.location}`, `${c.date} · ${c.actor1 || ''}${c.fatalities ? ' · ' + c.fatalities + ' fatalities' : ''}`,
+    g => select({marker: g, kind: 'Conflict event · ACLED · ' + c.type, title: `${c.sub || c.type} · ${c.location}`, lines: [`${c.date} · ${c.country}`, [c.actor1, c.actor2].filter(Boolean).join(' vs '), c.fatalities ? c.fatalities + ' reported fatalities' : 'no reported fatalities', c.notes].filter(Boolean),
+      links: [lk('ACLED Explorer', 'https://acleddata.com/explorer/', true), lk('News here (GDELT)', `https://api.gdeltproject.org/api/v2/doc/doc?query=${enc('"' + c.location + '"')}&mode=artlist&timespan=7d`), LINK.gsat(c.x, c.y), LINK.osm(c.x, c.y, 13)],
+      source: 'ACLED' + (c.source ? ' · reported by ' + c.source : ''), note: 'Coded from media and partner reports; coordinates can be approximate (town or district level).'}));
+});
+data.events.forEach(ev => {
+  marker('layer-events', 'm-event', ev.x, ev.y, el('path', {d: BUBBLE}), ev.title, `${ev.place} · ${ev.source || ''} · ${ago(ev.t)}`,
+    g => select({marker: g, kind: 'News event · ' + ev.place, title: ev.title, lines: [`${ev.source || '—'} · ${utc(ev.t)}`, `placed at ${ev.place} from the headline (approximate)`],
+      links: [Object.assign(lk('article', ev.url, true), {full: 'Open article'}), lk('More on ' + ev.place + ' (GDELT)', `https://api.gdeltproject.org/api/v2/doc/doc?query=${enc('"' + ev.place + '"')}&mode=artlist&timespan=24h`), LINK.osm(ev.x, ev.y, 11)],
+      source: ev.via === 'gdelt' ? 'GDELT DOC 2.0' : 'RSS headlines', note: 'Location is inferred from place names in the headline, not from the article; treat it as a pointer, not a fix.'}));
+});
+(function () {
+  const cf = data.sources.find(s => s.name === 'Cloudflare Radar');
+  if (!cf || /not configured/.test(cf.note)) return;
+  const card = document.getElementById('card-outages'), list = document.getElementById('out-list');
+  card.hidden = false;
+  const outs = data.outages || [];
+  const LAND = {CY: ['cyprus'], LB: ['lebanon'], IL: ['israel'], SY: ['syria'], TR: ['turkey'], JO: ['jordan'], EG: ['egypt'], IQ: ['iraq'], SA: ['saudi'], PS: ['westbank', 'gaza']};
+  const active = outs.filter(o => !o.end || Date.now() - new Date(o.end).getTime() < 3600e3);
+  document.getElementById('out-n').textContent = `${active.length} ongoing · ${outs.length} in 14 days`;
+  active.forEach(o => (o.loc || []).forEach(cc => (LAND[cc] || []).forEach(n => document.querySelectorAll(`.land[data-c="${n}"]`).forEach(p => p.classList.add('outage')))));
+  if (!outs.length) { list.appendChild(h('div', 'note', 'No outages reported for the region in the last 14 days.')); return; }
+  outs.slice(0, 25).forEach(o => {
+    const row = h('div', 'outrow'), on = !o.end;
+    const b = h('b', null, o.locName || (o.loc || []).join(', ')); row.appendChild(b);
+    row.appendChild(h('span', 'tag' + (on ? '' : ' ended'), on ? 'ongoing' : 'ended'));
+    row.appendChild(h('div', null, [o.type && nice(o.type), o.cause && nice(o.cause), o.asns && o.asns.length ? o.asns.join(', ') : null].filter(Boolean).join(' · ') || (o.desc || '')));
+    if (o.desc && (o.type || o.cause)) row.appendChild(h('div', 'note', o.desc));
+    row.appendChild(h('span', 'when', `${utc(o.start)} → ${o.end ? utc(o.end) : 'now'}`));
+    const a = h('a', null, o.url ? 'report ↗' : 'Cloudflare Radar ↗'); a.href = o.url || 'https://radar.cloudflare.com/outage-center'; a.target = '_blank'; a.rel = 'noopener noreferrer'; row.appendChild(a);
+    list.appendChild(row);
+  });
+})();
 
 /* ---------- KPIs + layer chips ---------- */
 const layers = [
   {key: 'flights',   label: 'Flights',        node: 'layer-flights',   color: 'var(--c-flights)',   count: data.flights.length,   shape: 'arrow', sub: `${data.flights.filter(f => f._c.mil).length} military · ${new Set(data.flights.map(f => f._c.cls)).size} classes`},
   {key: 'vessels',   label: 'Vessels',        node: 'layer-vessels',   color: 'var(--c-vessels)',   count: data.vessels.length,   shape: 'chevron', sub: `${data.vessels.filter(v => v._c.naval).length} naval · ${new Set(data.vessels.map(v => v._c.t)).size} classes`},
   {key: 'hex',       label: 'GNSS hexes',     node: 'layer-hex',       color: 'var(--heat-1)',      count: data.hexes.length,     shape: 'hex', sub: `${degraded} degraded`},
+  ...(data.events.length ? [{key: 'events', label: 'News events', node: 'layer-events', color: '#e8d58a', count: data.events.length, shape: 'bubble', sub: `${new Set(data.events.map(e => e.place)).size} places`}] : []),
+  ...(data.hotspots.length ? [{key: 'fires', label: 'Hotspots', node: 'layer-fires', color: '#ff6a2b', count: data.hotspots.length, shape: 'flame', sub: `max FRP ${Math.max(...data.hotspots.map(p => p.frp || 0))} MW · 24 h`}] : []),
+  ...(data.conflict.length ? [{key: 'conflict', label: 'Conflict events', node: 'layer-conflict', color: '#e5484d', count: data.conflict.length, shape: 'burst', sub: `${fmt(data.conflict.reduce((a, c) => a + (c.fatalities || 0), 0))} fatalities · 30 d`}] : []),
   {key: 'infra',     label: 'Infrastructure', node: 'layer-infra',     color: 'var(--c-infra)',     count: data.infra.length,     shape: 'square'},
   {key: 'places',    label: 'Places',         node: 'layer-places',    color: 'var(--c-places)',    count: data.places.length,    shape: 'dot'},
   {key: 'celltower', label: 'Cell towers',    node: 'layer-celltower', color: 'var(--c-celltower)', count: data.celltower.length, shape: 'tri'},
@@ -965,6 +1047,8 @@ const layers = [
   {key: 'wireless',  label: 'Wireless APs',   node: 'layer-wireless',  color: 'var(--c-wireless)',  count: data.wireless.length,  shape: 'smalldot'},
 ];
 const SHAPES = {
+  bubble: '<path d="M1,1.5 H11 V8 H6 L3.5,11 V8 H1 Z"/>', burst: '<path d="M6,0.5 L7.4,4 L11.3,3.4 L8.6,6.2 L10.2,10.2 L6,8.2 L1.8,10.2 L3.4,6.2 L0.7,3.4 L4.6,4 Z"/>',
+  flame: '<path d="M6,0.5 C8.5,3 10,5 9.2,8 C8.6,10.2 7.4,11.4 6,11.4 C4.6,11.4 3.2,10.4 2.8,8.4 C2.4,6.4 4,5.2 4.6,3.6 C5.2,5 5.6,5.6 6.4,6 C6.8,4 6.6,2.4 6,0.5 Z"/>',
   arrow: '<path d="M6,0.5 L9.5,11 L6,8.6 L2.5,11 Z"/>', chevron: '<path d="M6,1 L10.5,10.5 L6,8 L1.5,10.5 Z"/>',
   hex: '<path d="M6,0.8 L10.6,3.4 L10.6,8.6 L6,11.2 L1.4,8.6 L1.4,3.4 Z"/>', square: '<rect x="1.5" y="1.5" width="9" height="9" rx="1"/>',
   dot: '<circle cx="6" cy="6" r="4.5"/>', tinysq: '<rect x="3" y="3" width="6" height="6"/>', tri: '<path d="M6,0.8 L11,11 L1,11 Z"/>', smalldot: '<circle cx="6" cy="6" r="3"/>'
@@ -1041,9 +1125,9 @@ function linkRow(kind) {
 }
 document.getElementById('fl-n').textContent = data.flights.length + ' · click a row for its source';
 document.getElementById('flight-table').appendChild(table(
-  ['Callsign', 'Open in', 'Class', 'Type', 'Reg', 'Alt ft', 'Speed kt', 'Hdg'],
-  data.flights.map(f => [f.callsign || '—', '', f._c.label, f.type || '—', f.reg || '—', f.alt, f.spd, f.trk]),
-  [false, false, false, false, false, true, true, true], linkRow('flight')));
+  ['Callsign', 'Open in', 'Class', 'Route', 'Type', 'Reg', 'Alt ft', 'Speed kt', 'Hdg'],
+  data.flights.map(f => [f.callsign || '—', '', f._c.label, routeTxt(f) || '—', f.type || '—', f.reg || '—', f.alt, f.spd, f.trk]),
+  [false, false, false, false, false, false, true, true, true], linkRow('flight')));
 document.getElementById('vs-n').textContent = data.vessels.length + ' · click a row for its source';
 document.getElementById('vessel-table').appendChild(table(
   ['Name', 'Open in', 'Class', 'MMSI', 'Call sign', 'Length', VS_HAS_HRS ? 'Gear' : 'Speed', 'Flag', VS_HAS_HRS ? 'Hours' : 'Seen'],
@@ -1071,6 +1155,17 @@ document.getElementById('vessel-table').appendChild(table(
   });
 })();
 
+(function () {
+  const wrap = document.getElementById('sym-ev-wrap'), list = document.getElementById('sym-ev');
+  const rows = [];
+  const mk = (d, fill, name, ex, n, vb = '-5 -5 10 10') => { const sv = el('svg', {viewBox: vb, width: 36, height: 24}); sv.appendChild(el('path', {d, fill, stroke: '#0a1119', 'stroke-width': .4})); const r = h('div', 'sym' + (n ? '' : ' zero')); r.appendChild(sv); const t = h('div', 'nm', name); t.appendChild(h('span', 'ex', ex)); r.appendChild(t); r.appendChild(h('b', null, String(n))); return r; };
+  if (data.events.length || data.sources.some(s => s.name === 'GDELT')) rows.push(mk(BUBBLE, '#e8d58a', 'News event', 'GDELT / RSS headline placed by place name', data.events.length));
+  if (data.sources.some(s => s.name === 'NASA FIRMS' && !/not configured/.test(s.note))) rows.push(mk(FLAME, '#ff6a2b', 'Thermal hotspot', 'NASA FIRMS, sized by fire radiative power', data.hotspots.length));
+  if (data.sources.some(s => s.name === 'ACLED' && !/not configured/.test(s.note))) Object.entries(ACLED_COL).forEach(([t, c]) => rows.push(mk(BURST, c, t, 'ACLED, sized by fatalities', data.conflict.filter(e => e.type === t).length)));
+  if (data.outages) { const r = h('div', 'sym'); const sv = el('svg', {viewBox: '0 0 36 24', width: 36, height: 24}); sv.appendChild(el('rect', {x: 4, y: 4, width: 28, height: 16, rx: 3, fill: 'var(--land)', stroke: '#ff4d4d', 'stroke-dasharray': '5 3', 'stroke-width': 1.6})); r.appendChild(sv); const t = h('div', 'nm', 'Internet outage'); t.appendChild(h('span', 'ex', 'country with an ongoing Cloudflare Radar outage')); r.appendChild(t); r.appendChild(h('b', null, String(data.outages.filter(o => !o.end).length))); rows.push(r); }
+  if (rows.length) { wrap.hidden = false; rows.forEach(r => list.appendChild(r)); }
+})();
+
 /* ---------- headlines ---------- */
 const newsList = document.getElementById('news-list');
 document.getElementById('news-n').textContent = data.news.length + ' items';
@@ -1078,7 +1173,7 @@ data.news.forEach(n => {
   const item = h('div', 'news-item');
   const a = h('a', null, n.title); a.href = n.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
   item.appendChild(a);
-  item.appendChild(h('span', 'src', `${n.source || ''} · ${n.publishedAt ? n.publishedAt.slice(0, 10) : ''}`));
+  const srcl = h('span', 'src', `${n.source || ''} · ${n.publishedAt ? n.publishedAt.slice(0, 16).replace('T', ' ') : ''}`); if (n.via === 'gdelt') srcl.appendChild(h('span', 'via', 'GDELT')); item.appendChild(srcl);
   newsList.appendChild(item);
 });
 
@@ -1175,7 +1270,7 @@ if (LIVE) {
   if (LIVE.got.gnss) { document.getElementById('hex-lab').textContent = 'GNSS window'; document.getElementById('hex-time').textContent = `last ${LIVE.got.gnss} h to ${data.hex_updated.slice(11, 16)} UTC`; }
   document.querySelector('#flight-table').closest('.card').querySelector('h2').firstChild.textContent = 'Flights now ';
   if (LIVE.got.vessels) document.querySelector('#vessel-table').closest('.card').querySelector('h2').firstChild.textContent = 'Vessels now ';
-  document.getElementById('foot').innerHTML = '<strong>Near-live feed.</strong> Aircraft, vessels' + (LIVE.got.vessels ? '' : ' (snapshot until an AIS key is configured)') + ', GNSS accuracy and headlines are collected about every 10 minutes by a scheduled job and reloaded automatically; infrastructure, places, cell and Wi-Fi layers are a 28 Sep 2026 snapshot. GNSS hexes show aircraft-reported accuracy (NACp), which is consistent with jamming or spoofing but does not prove either. Positions can be minutes old. Cross-check every item before treating it as ground truth.';
+  document.getElementById('foot').innerHTML = '<strong>Near-live feed.</strong> Aircraft, vessels' + (LIVE.got.vessels ? '' : ' (snapshot until an AIS key is configured)') + ', GNSS accuracy, headlines, news events, thermal hotspots, internet outages and conflict events (whichever sources are configured) are collected about every 10 minutes by a scheduled job and reloaded automatically; infrastructure, places, cell and Wi-Fi layers are a 28 Sep 2026 snapshot. GNSS hexes show aircraft-reported accuracy (NACp), which is consistent with jamming or spoofing but does not prove either. Positions can be minutes old. Cross-check every item before treating it as ground truth.';
   let fresh = false;
   const paint = () => {
     const mins = Math.round((Date.now() - gen.getTime()) / 60000);

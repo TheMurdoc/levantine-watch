@@ -21,7 +21,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -40,6 +40,24 @@ jobs:
         env:
           AISSTREAM_API_KEY: ${{ secrets.AISSTREAM_API_KEY }}
           NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
+          FIRMS_MAP_KEY: ${{ secrets.FIRMS_MAP_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ACLED_EMAIL: ${{ secrets.ACLED_EMAIL }}
+          ACLED_PASSWORD: ${{ secrets.ACLED_PASSWORD }}
+          WINGBITS_API_KEY: ${{ secrets.WINGBITS_API_KEY }}
+          DATALASTIC_API_KEY: ${{ secrets.DATALASTIC_API_KEY }}
+          DATADOCKED_API_KEY: ${{ secrets.DATADOCKED_API_KEY }}
+          FR24_API_TOKEN: ${{ secrets.FR24_API_TOKEN }}
+          FLIGHTAWARE_API_KEY: ${{ secrets.FLIGHTAWARE_API_KEY }}
+          # paid-API caps per run (the job runs ~144 times a day)
+          DATALASTIC_MAX_PER_RUN: "15"
+          # Data Docked kept to the bare minimum: 1 area call + 1 vessel-details call per WEEK
+          DATADOCKED_EVERY_MIN: "10080"         # area search once a week (1 circle, Limassol 50 km)
+          DATADOCKED_KEEP_HOURS: "24"           # how long those weekly positions stay on the map
+          DATADOCKED_AREA_MAX_PER_DAY: "1"      # hard daily ceiling on area calls; more circles via DATADOCKED_AREAS="lat,lon;lat,lon"
+          DATADOCKED_DETAILS_EVERY_MIN: "10080" # vessel-details lookup (fallback after Datalastic) once a week
+          FR24_MAX_PER_RUN: "15"
+          FLIGHTAWARE_MAX_PER_RUN: "5"
           PAGES_BASE_URL: ${{ steps.pages.outputs.base_url }}
           AIS_LISTEN_SECONDS: "90"
           GNSS_WINDOW_HOURS: "6"

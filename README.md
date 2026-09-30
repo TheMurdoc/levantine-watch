@@ -21,23 +21,31 @@ Click any marker, hexagon or table row to get its **Open in …** buttons. The *
 
 ## Live data
 
-A scheduled GitHub Actions job (`.github/workflows/live.yml`) runs `collector/collect.py` about every 10 minutes and redeploys the site with a fresh `data/live.json`:
+A scheduled GitHub Actions job (`.github/workflows/live.yml`) runs `collector/collect.py` about every 10 minutes and redeploys the site with a fresh `data/live.json`. Every source is optional: without its secret it is simply skipped and shown as "not configured" under Data provenance.
 
-| Layer | Source | Key needed |
-|---|---|---|
-| Aircraft | airplanes.live (falls back to adsb.lol, adsb.fi) | none |
-| GNSS interference | aircraft-reported NACp from the same ADS-B data, per H3 hexagon, rolling 6 h window | none |
-| Vessels | aisstream.io live AIS (90 s listen per run, positions kept 60 min) | `AISSTREAM_API_KEY` |
-| Headlines | Cyprus Mail, in-cyprus, BBC Middle East, Al Jazeera RSS (+ NewsAPI if set) | optional `NEWSAPI_KEY` |
+| Layer | Source | Secret(s) | Refresh / cost control |
+|---|---|---|---|
+| Aircraft | airplanes.live (fallback adsb.lol, adsb.fi) | none | every run, 4 requests |
+| Flight routes, operator | Flightradar24 API, FlightAware AeroAPI fallback | `FR24_API_TOKEN`, `FLIGHTAWARE_API_KEY` | military/state first, ≤15 + ≤5 callsigns per run, cached 6 h |
+| GNSS interference | Wingbits `/v1/gps/jam` (fallback: ADS-B NACp, rolling 6 h) | `WINGBITS_API_KEY` | every 30 min |
+| Vessels | aisstream.io live AIS | `AISSTREAM_API_KEY` | 90 s listen per run |
+| Vessels near port | Data Docked vessels-by-area (terrestrial AIS, one 50 km circle off Limassol) | `DATADOCKED_API_KEY` | **1 call per week**, positions shown for 24 h (`DATADOCKED_EVERY_MIN`, `DATADOCKED_KEEP_HOURS`; more circles via `DATADOCKED_AREAS`) |
+| Vessel details | Datalastic `vessel_info`, then Data Docked particulars as fallback | `DATALASTIC_API_KEY`, `DATADOCKED_API_KEY` | only incomplete ships; Datalastic ≤15 per run, Data Docked **1 per week**; cached 30 days |
+| Headlines + news events | RSS (Cyprus Mail, in-cyprus, BBC, Al Jazeera) + GDELT DOC 2.0, placed on the map by place name | none (optional `NEWSAPI_KEY`) | every run |
+| Thermal hotspots | NASA FIRMS (VIIRS SNPP/NOAA-20/NOAA-21 + MODIS, 24 h) | `FIRMS_MAP_KEY` | every run, 4 requests |
+| Internet outages | Cloudflare Radar outage annotations, 14 days | `CLOUDFLARE_API_TOKEN` | hourly |
+| Conflict events | ACLED, last 30 days | `ACLED_EMAIL`, `ACLED_PASSWORD` | every 6 h |
 
-Infrastructure, places, cell and Wi-Fi layers stay a static snapshot. The page checks for new data every minute and reloads itself, keeping your map view (if a panel is open it shows **New data · click to refresh** instead).
+Caps can be changed in the workflow (`FR24_MAX_PER_RUN`, `FLIGHTAWARE_MAX_PER_RUN`, `DATALASTIC_MAX_PER_RUN`, `DATADOCKED_MAX_PER_RUN`). Infrastructure, places, cell and Wi-Fi layers stay a static snapshot. The page checks for new data every minute and reloads itself, keeping your map view (if a panel is open it shows **New data · click to refresh** instead).
+
+**Licensing:** the site and `data/live.json` are public. Paid feeds (Flightradar24, FlightAware, Datalastic, Data Docked, Wingbits) and ACLED have terms on redistribution and attribution; check your plan allows public display before enabling them.
 
 ### One-time setup
 1. **Settings → Pages → Build and deployment → Source: GitHub Actions**.
-2. Free aisstream.io key (sign in with GitHub at aisstream.io → API Keys), then **Settings → Secrets and variables → Actions → New repository secret**: `AISSTREAM_API_KEY`. Optional: `NEWSAPI_KEY`.
-3. **Actions → Live data → Run workflow** for the first run.
+2. **Settings → Secrets and variables → Actions → New repository secret** for each key you have (names above).
+3. **Actions → Live data → Run workflow** for the first run; the "Collect live data" log lists every source as `OK` or `--` with the reason.
 
-Notes: scheduled runs can start late and GitHub pauses schedules after 60 days without repository activity (re-enable in the Actions tab). The ADS-B APIs are free for non-commercial use and rate-limited (the collector makes 4 requests per run). Run locally with `pip install -r collector/requirements.txt && python collector/collect.py --out data`, then serve the folder (`python -m http.server`).
+Notes: scheduled runs can start late and GitHub pauses schedules after 60 days without repository activity (re-enable in the Actions tab). The ADS-B APIs are free for non-commercial use and rate-limited. Run locally with `pip install -r collector/requirements.txt && python collector/collect.py --out data`, then serve the folder (`python -m http.server`).
 
 ## Aircraft and vessel symbols
 
