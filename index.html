@@ -17,7 +17,7 @@
   --accent:#d9c9a8;
   --land:#3c3624; --land-line:#7d7250; --land-cy:#4a4229; --coast-glow:#3e86ad;
   /* validated categorical slots (dark surface #111a25) */
-  --c-flights:#3987e5; --c-vessels:#d95926; --c-places:#199e70; --c-infra:#c98500; --c-celltower:#d55181; --c-wireless:#9085e9; --c-cells:#e66767;
+  --c-flights:#3987e5; --ac-civ:#4b9bff; --ac-mil:#c9d65a; --c-vessels:#d95926; --c-places:#199e70; --c-infra:#c98500; --c-celltower:#d55181; --c-wireless:#9085e9; --c-cells:#e66767;
   --heat-0:#5c6b80; --heat-1:#ff4d4d;
   --good:#0ca30c; --warn:#fab219; --bad:#d03b3b;
   --radius:12px; --radius-sm:8px;
@@ -118,12 +118,44 @@ a.tbtn{text-decoration:none;font-size:9.5px;letter-spacing:.04em}
 .m-celltower path{fill:var(--c-celltower);opacity:.9}
 .m-infra rect,.m-infra path,.m-infra circle{fill:var(--c-infra);opacity:.8}
 .m-infra.cat-military path{opacity:1}
-.m-vessel path{fill:var(--c-vessels);stroke:var(--bg);stroke-width:.8}
-.m-flight path{fill:var(--c-flights);stroke:var(--bg);stroke-width:.8}
+.acs .ic{fill:var(--ac-civ);stroke:#050c14;stroke-width:.7;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.acs.mil .ic{fill:var(--ac-mil)}
+.acs .rotor{fill:var(--ac-civ);fill-opacity:.14;stroke:var(--ac-civ);stroke-opacity:.6;stroke-width:.6;vector-effect:non-scaling-stroke}
+.acs.mil .rotor{fill:var(--ac-mil);stroke:var(--ac-mil)}
+.acs .dome{fill:#0b1622;stroke:var(--ac-mil);stroke-width:1.2;vector-effect:non-scaling-stroke}
+.vss .ic{fill:var(--vc);stroke:#050c14;stroke-width:.6;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.vss.naval .ic{stroke:#e8eef4;stroke-width:.5}
+.marker .hit{fill:transparent;stroke:none}
+.zs{transform:scale(var(--zs,1))}
+/* point markers keep a readable size when zooming (cell bins are areas, so they scale with the map) */
+.m-infra>*,.m-celltower>*,.m-wireless>*,.m-place>*{transform:scale(var(--zs,1))}
+.m-vessel .zs{transform:rotate(var(--unrot,0deg)) scale(var(--zs,1))}
+.marker:hover .ic,.marker.hi .ic{stroke:var(--ink);stroke-width:1}
+.marker.sel-on .ic{stroke:var(--accent);stroke-width:1.3}
+.marker:hover .hit,.marker.hi .hit{stroke:var(--ink);stroke-opacity:.5;stroke-width:.8;vector-effect:non-scaling-stroke}
+.marker.sel-on .hit{stroke:var(--accent);stroke-width:1.2;vector-effect:non-scaling-stroke}
+.marker.sel-on .rotor,.marker:hover .rotor{opacity:1}
+.chip.sub svg.isvg{width:22px;height:15px}
+.clsicon{display:inline-flex;align-items:center;gap:6px}
+.clsicon svg{width:20px;height:14px;flex-shrink:0}
+.symgrid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+@media (max-width:860px){.symgrid{grid-template-columns:1fr}}
+.symh{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);margin:0 0 8px;display:flex;gap:10px;align-items:center}
+.symh .sw{display:inline-flex;align-items:center;gap:5px;letter-spacing:.04em;text-transform:none;color:var(--ink-faint)}
+.symh .sw i{width:10px;height:10px;border-radius:3px;display:inline-block}
+.symlist{display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:6px}
+.sym{display:grid;grid-template-columns:36px 1fr auto;gap:8px;align-items:center;padding:6px 9px;border:1px solid var(--line-soft);border-radius:8px;background:var(--surface-2)}
+.sym.zero .nm,.sym.zero b{opacity:.5}
+.sym.zero svg{opacity:.75}
+.sym svg{width:36px;height:24px}
+.sym .nm{font-size:12px;color:var(--ink);line-height:1.3}
+.sym .ex{font-size:10px;color:var(--ink-faint);font-family:var(--mono);display:block;margin-top:1px}
+.sym b{font-family:var(--mono);font-size:11px;color:var(--ink-dim);font-weight:500}
+.symgrp{grid-column:1/-1;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-dim);display:flex;align-items:center;gap:7px;margin-top:8px}
+.symgrp:first-child{margin-top:0}
+.symgrp i{width:10px;height:10px;border-radius:3px;display:inline-block}
+.symgrp em{font-style:normal;color:var(--ink-faint);text-transform:none;letter-spacing:0}
 .marker:hover circle,.marker:hover rect,.marker:hover path,.marker.hi circle,.marker.hi rect,.marker.hi path{opacity:1;stroke:var(--ink);stroke-width:1.2}
-.halo{fill:none;stroke:currentColor;opacity:.35;animation:pulse 2.4s ease-out infinite}
-.m-flight .halo{stroke:var(--c-flights)}.m-vessel .halo{stroke:var(--c-vessels)}
-@keyframes pulse{0%{r:5;opacity:.5}100%{r:13;opacity:0}}
 .compass text{font-family:var(--mono);font-size:10px;fill:var(--ink-dim)}
 .compass line{stroke:var(--ink-dim);stroke-width:1}
 .map-overlay{position:absolute;top:12px;left:12px;display:flex;flex-direction:column;gap:8px;max-width:210px}
@@ -320,7 +352,7 @@ a.tbtn{text-decoration:none;font-size:9.5px;letter-spacing:.04em}
   </section>
 
   <section class="card span-3" id="card-vesselcat">
-    <h2>Vessel activity by type <button class="vtoggle" data-toggle="vesselcat">Table</button></h2>
+    <h2>Vessel activity by class <button class="vtoggle" data-toggle="vesselcat">Table</button></h2>
     <p class="note">Hours of tracked AIS activity, Cyprus-flagged vessels in the Cyprus EEZ.</p>
     <div data-view="vesselcat-chart" class="bars" style="--c:var(--c-vessels)"></div>
     <div data-view="vesselcat-table" hidden class="tblwrap"></div>
@@ -341,6 +373,14 @@ a.tbtn{text-decoration:none;font-size:9.5px;letter-spacing:.04em}
   <section class="card span-6">
     <h2>Vessels in snapshot <span class="n" id="vs-n"></span></h2>
     <div class="tblwrap" id="vessel-table"></div>
+  </section>
+
+  <section class="card span-12" id="card-symbols">
+    <h2>Symbol key <span class="n">aircraft by ICAO type code and military callsign · vessels by MarineTraffic / VesselFinder ship-type group · icon size follows aircraft class or hull length</span></h2>
+    <div class="symgrid">
+      <div><h3 class="symh">Aircraft <span class="sw"><i style="background:var(--ac-civ)"></i>civil</span><span class="sw"><i style="background:var(--ac-mil)"></i>military / state</span></h3><div class="symlist" id="sym-ac"></div></div>
+      <div><h3 class="symh">Vessels</h3><div class="symlist" id="sym-vs"></div></div>
+    </div>
   </section>
 
   <section class="card span-12">
@@ -364,6 +404,180 @@ const el = (tag, attrs) => { const n = document.createElementNS(svgns, tag); for
 const h = (tag, cls, txt) => { const n = document.createElement(tag); if (cls) n.className = cls; if (txt != null) n.textContent = txt; return n; };
 const fmt = n => (n == null || Number.isNaN(n)) ? '\u2014' : n.toLocaleString('en-GB');
 const nice = s => (s || 'unknown').toString().toLowerCase().replace(/_/g, ' ');
+/* ================= aircraft + vessel classification & symbols ================= */
+/* Aircraft: ICAO type designator first, then military callsign / registration patterns. */
+const codes = s => new Set(s.trim().split(/\s+/));
+const AC_TYPES = {
+  heavy:        codes('A306 A30B A310 A332 A333 A337 A338 A339 A342 A343 A345 A346 A359 A35K A388 B741 B742 B743 B744 B748 B74S B762 B763 B764 B772 B773 B77L B77W B778 B779 B788 B789 B78X DC10 MD11 IL96 IL86 A3ST'),
+  narrow:       codes('A318 A319 A320 A321 A19N A20N A21N B712 B717 B721 B722 B731 B732 B733 B734 B735 B736 B737 B738 B739 B37M B38M B39M B3XM B752 B753 MD81 MD82 MD83 MD87 MD88 MD90 T204 T154 C919'),
+  regional:     codes('E170 E175 E190 E195 E290 E295 E75L E75S E135 E145 CRJ1 CRJ2 CRJ7 CRJ9 CRJX BCS1 BCS3 RJ70 RJ85 RJ1H B461 B462 B463 F70 F100 SU95 AR85 AJ27'),
+  turboprop:    codes('AT43 AT44 AT45 AT46 AT72 AT73 AT75 AT76 DH8A DH8B DH8C DH8D DHC6 DHC7 SF34 SB20 JS31 JS32 JS41 D328 F50 B350 B190 BE20 BE30 BE9L BE99 PC12 C208 C212 L410 AN24 SW4 P180 TBM7 TBM8 TBM9 PA46 P46T'),
+  bizjet:       codes('C25A C25B C25C C25M C500 C501 C510 C525 C550 C551 C560 C56X C650 C680 C68A C700 C750 CL30 CL35 CL60 GL5T GL7T GLEX GLF2 GLF3 GLF4 GLF5 GLF6 G150 G200 G280 GALX F2TH F900 FA10 FA20 FA50 FA7X FA8X FA6X LJ31 LJ35 LJ40 LJ45 LJ55 LJ60 LJ70 LJ75 E35L E50P E55P E545 E550 H25A H25B H25C PRM1 HDJT PC24 BE40 ASTR SBR1 EA50 SF50 WW24 J328'),
+  light:        codes('C150 C152 C162 C170 C172 C175 C177 C180 C182 C185 C206 C207 C210 C310 C340 C414 C421 P28A P28B P28R P28T P32R PA18 PA22 PA24 PA31 PA34 PA38 PA44 SR20 SR22 S22T DA20 DA40 DA42 DA62 BE33 BE35 BE36 BE55 BE58 BE76 M20P M20T TB9 TB10 TB20 DR40 AA5 G115'),
+  helicopter:   codes('R22 R44 R66 B06 B06T B105 B206 B407 B412 B427 B429 B430 B212 B214 B505 A109 A119 A129 A139 A149 A169 A189 AS32 AS50 AS55 AS65 AS3B EC20 EC25 EC30 EC35 EC45 EC55 EC75 H125 H130 H135 H145 H155 H160 H175 H215 H225 BK17 S61 S64 S70 S76 S92 H60 UH60 MH60 SH60 H64 AH64 H47 CH47 H53 CH53 V22 MI8 MI17 MI24 MI26 MI28 KA27 KA32 KA52 NH90 EH10 LYNX WILD PUMA SUPU TIGR GAZL ALO3 UH1 UH1Y AH1'),
+  fighter:      codes('F4 F5 F14 F15 F16 F18 F18S F18H F22 F35 EUFI RFAL TOR TORN MIR2 M2000 MRF1 JAS3 JS39 GRIF SU24 SU25 SU27 SU30 SU33 SU34 SU35 SU57 MG21 MG23 MG25 MG29 MG31 J10 J11 J20 JF17 KFIR HAWK T38 T50 M346 L39 L159 A4 A10 AV8B HURJ KAAN B1 B2 B52 TU22 TU95 T160'),
+  miltransport: codes('C130 C30J C17 A400 C160 C295 CN35 C27J C2 C390 E390 IL76 AN12 AN22 AN26 AN30 AN32 AN72 A124 AN124 C5 C5M Y20 Y8 Y9 KC2'),
+  tanker:       codes('K35R K35E K35T KC10 KC46 K46 A33K MRTT KC30 IL78 K767'),
+  isr:          codes('E3TF E3CF E6 E767 E737 E7 E2 P8 P3 P1 R135 E8 E4 U2 IL38 IL20 TU142 A50 KJ2K'),
+  drone:        codes('RQ4 GLHK Q4 MQ4 MQ9 Q9 MQ1 HRON HERN H900 TB2 AKIN ANKA WK45'),
+};
+const MIL_HELI = codes('H60 UH60 MH60 SH60 H64 AH64 H47 CH47 H53 CH53 V22 MI24 MI28 KA52 NH90 EH10 LYNX WILD TIGR UH1 UH1Y AH1 A129');
+const QUAD = codes('A342 A343 A345 A346 A388 B741 B742 B743 B744 B748 B74S IL96 IL86');
+/* known military / state callsign stems (ADS-B visible) */
+const MIL_CS = /^(RCH|REACH|RRR|ASCOT|TARTN|CFC|CTM|FAF|GAF|GAM|IAM|HAF|TUAF|TURAF|PLF|NAVY|CNV|SPAR|SAM|VENUS|BAF|NAF|DAF|HUAF|CEF|ASY|NATO|MMF|LAGR|QID|ETHYL|PEARL|FORTE|HOMER|JAKE|OLIVE|COBRA|DUKE|EVAC|PEDRO|KING|MAGMA|RFR|AME|SHF|NOH|HRZ)/;
+const TANKER_CS = /^(LAGR|QID|ETHYL|PEARL|TARTN|MMF|GOLD|BLUE|ARIA|NKT)/;
+const ISR_CS = /^(FORTE|HOMER|JAKE|OLIVE|NATO|SNTRY|MAGMA)/;
+const MIL_REG = /^(Z[A-Z]\d{3}|MM\d{4,5}|\d{2}-\d{4,5}|\d{5,6})$/;
+const AC_CLASSES = {
+  heavy:        {label: 'Wide-body airliner',    ex: 'A330 · A350 · B777 · B787 · A380',  size: 1.25},
+  narrow:       {label: 'Narrow-body airliner',  ex: 'A320neo family · B737 · B757',      size: 1},
+  regional:     {label: 'Regional jet',          ex: 'E-Jets · CRJ · A220',               size: .85},
+  turboprop:    {label: 'Turboprop',             ex: 'ATR 72 · Dash 8 · King Air · PC-12', size: .82},
+  bizjet:       {label: 'Business jet',          ex: 'Gulfstream · Global · Falcon',       size: .75},
+  light:        {label: 'Light aircraft',        ex: 'C172 · PA-28 · SR22 · DA42',         size: .62},
+  helicopter:   {label: 'Helicopter',            ex: 'AW139 · H145 · S-92 · UH-60',        size: .72},
+  fighter:      {label: 'Fighter / combat',      ex: 'F-16 · F-35 · Eurofighter · Rafale', size: .82, mil: true},
+  miltransport: {label: 'Military transport',    ex: 'C-130J · A400M · C-17 · C-295',      size: 1.15, mil: true},
+  tanker:       {label: 'Air tanker',            ex: 'KC-135 · KC-46 · A330 MRTT',         size: 1.25, mil: true},
+  isr:          {label: 'AEW / ISR / patrol',    ex: 'E-3 · E-7 · P-8 · RC-135',           size: 1.15, mil: true},
+  drone:        {label: 'Drone / UAV',           ex: 'RQ-4 · MQ-9 · Heron · TB2',          size: .8,  mil: true},
+  unknown:      {label: 'Unknown type',          ex: 'no or unrecognised type code',       size: .85},
+};
+const BIG = {A388: 1.45, B748: 1.4, B744: 1.35, A35K: 1.3, B77W: 1.3, C17: 1.3, A124: 1.45, AN124: 1.45, C5: 1.45, C5M: 1.45, B52: 1.4, RQ4: 1.05, GLHK: 1.05, Q4: 1.05};
+function classifyAircraft(f) {
+  const t = (f.type || '').toUpperCase().trim(), cs = (f.callsign || '').toUpperCase().trim(), reg = (f.reg || '').toUpperCase().trim();
+  let cls = Object.keys(AC_TYPES).find(k => AC_TYPES[k].has(t)) || 'unknown';
+  let mil = !!AC_CLASSES[cls].mil || MIL_HELI.has(t) || MIL_CS.test(cs) || MIL_REG.test(reg);
+  if (mil && TANKER_CS.test(cs) && ['heavy', 'narrow', 'miltransport', 'unknown'].includes(cls)) cls = 'tanker';
+  else if (mil && ISR_CS.test(cs) && ['heavy', 'narrow', 'bizjet', 'turboprop', 'unknown'].includes(cls)) cls = /FORTE/.test(cs) ? 'drone' : 'isr';
+  else if (mil && cls === 'unknown') cls = 'fighter';
+  const size = BIG[t] || AC_CLASSES[cls].size;
+  return {cls, mil, quad: QUAD.has(t), size, label: AC_CLASSES[cls].label};
+}
+
+/* Vessels: MarineTraffic / VesselFinder generic ship-type groups and colours;
+   naval ships sit in "Tugs & special craft" (AIS type 35, military ops) as they do on MarineTraffic. */
+const VS_GROUPS = {
+  cargo:     {label: 'Cargo',               color: '#8bd346'},
+  tanker:    {label: 'Tanker',              color: '#e8483e'},
+  passenger: {label: 'Passenger',           color: '#4c8dff'},
+  hsc:       {label: 'High-speed craft',    color: '#f6d32d'},
+  special:   {label: 'Tugs & special craft',color: '#35d0e0'},
+  fishing:   {label: 'Fishing',             color: '#f99a5a'},
+  pleasure:  {label: 'Pleasure craft',      color: '#e05be0'},
+  navaid:    {label: 'Navigation aids',     color: '#c8c8c8'},
+  unknown:   {label: 'Unspecified',         color: '#8a97a6'},
+};
+const VS_TYPES = {
+  container: {g: 'cargo',     label: 'Container ship',         len: 250}, bulk:    {g: 'cargo',  label: 'Bulk carrier',       len: 190},
+  general:   {g: 'cargo',     label: 'General cargo',          len: 110}, roro:    {g: 'cargo',  label: 'Ro-Ro / car carrier', len: 180},
+  tanker:    {g: 'tanker',    label: 'Oil / chemical tanker',  len: 180}, gas:     {g: 'tanker', label: 'LNG / LPG carrier',  len: 280},
+  cruise:    {g: 'passenger', label: 'Cruise ship',            len: 290}, ferry:   {g: 'passenger', label: 'Passenger / ferry', len: 150},
+  hsc:       {g: 'hsc',       label: 'High-speed craft',       len: 50},
+  tug:       {g: 'special',   label: 'Tug',                    len: 30},  pilot:   {g: 'special', label: 'Pilot / SAR boat',  len: 18},
+  offshore:  {g: 'special',   label: 'Offshore / research',    len: 80},
+  frigate:   {g: 'special',   label: 'Frigate / destroyer',    len: 135, naval: true}, corvette: {g: 'special', label: 'Corvette', len: 90, naval: true},
+  patrol:    {g: 'special',   label: 'Patrol / law enforcement', len: 45, naval: true}, submarine: {g: 'special', label: 'Submarine', len: 75, naval: true},
+  carrier:   {g: 'special',   label: 'Carrier / amphibious',   len: 220, naval: true},
+  trawler:   {g: 'fishing',   label: 'Trawler',                len: 28},  fishing: {g: 'fishing', label: 'Fishing vessel',     len: 18},
+  yacht:     {g: 'pleasure',  label: 'Motor yacht',            len: 24},  sailing: {g: 'pleasure', label: 'Sailing vessel',    len: 14},
+  navaid:    {g: 'navaid',    label: 'Navigation aid',         len: 10},  unknown: {g: 'unknown', label: 'Unspecified',        len: 60},
+};
+const NAVY_PREFIX = /^(HMS|USS|USNS|TCG|INS|FGS|ITS|HS|ENS|BNS|HNLMS|HDMS|ORP|ESPS|SPS|FS|KRI|HMAS|HMCS|HMNZS|RFS|CNS|ROKS|JS|ARA|NRP|BAP|ΠΝ|KNM|HSWMS|LÉ|RSS|PNS|INS)\s/;
+function classifyVessel(v) {
+  const len = +v.length || 0;
+  const txt = [v.type, v.gear, v.type_specific].join(' ').toUpperCase().replace(/_/g, ' ').replace(/NON FISHING/g, '');
+  const name = (v.name || '').toUpperCase();
+  const byLen = () => len >= 110 || !len ? 'frigate' : len >= 60 ? 'corvette' : 'patrol';
+  const rules = [
+    [/SUBMARINE/, 'submarine'], [/AIRCRAFT CARRIER|AMPHIB|LANDING (SHIP|HELICOPTER|PLATFORM)|\bLHD\b|\bLPD\b/, 'carrier'],
+    [/FRIGATE|DESTROYER|CRUISER/, 'frigate'], [/CORVETTE/, 'corvette'],
+    [/MILITARY|NAVAL|WARSHIP|\bNAVY\b/, byLen], [/LAW ENFORCE|PATROL|COAST ?GUARD|POLICE/, 'patrol'],
+    [/\bTUG|TOWING/, 'tug'], [/PILOT|SEARCH|RESCUE|\bSAR\b/, 'pilot'],
+    [/LNG|LPG|GAS CARRIER/, 'gas'], [/TANKER|BUNKER|CRUDE|CHEMICAL|PRODUCT/, 'tanker'],
+    [/SUPPLY|OFFSHORE|RESEARCH|SURVEY|SEISMIC|DREDG|DIVING|CABLE|ANCHOR HANDLING|SUPPORT|ICEBREAKER/, 'offshore'],
+    [/CONTAINER/, 'container'], [/BULK/, 'bulk'], [/RO-?RO|VEHICLE|CAR CARRIER/, 'roro'], [/CARGO|REEFER|CARRIER|HEAVY LOAD/, 'general'],
+    [/HIGH SPEED|\bHSC\b|FAST FERRY|WIG/, 'hsc'], [/CRUISE/, 'cruise'], [/SAIL/, 'sailing'], [/PLEASURE|YACHT/, 'yacht'],
+    [/PASSENGER|FERRY|RO-?PAX/, 'ferry'], [/TRAWL/, 'trawler'], [/FISH|LONGLINE|SEINE|GILLNET|POLE AND LINE|SQUID|POTS|TRAP/, 'fishing'],
+    [/NAVIGATION AID|BUOY|BEACON|ATON/, 'navaid'],
+  ];
+  let t = 'unknown';
+  if (NAVY_PREFIX.test(name)) t = byLen();
+  else for (const [re, k] of rules) if (re.test(txt)) { t = typeof k === 'function' ? k() : k; break; }
+  if (t === 'ferry' && len >= 200) t = 'cruise';
+  const L = len || VS_TYPES[t].len;
+  const size = Math.max(.6, Math.min(1.45, .6 + .17 * Math.log2(L / 10)));
+  const T = VS_TYPES[t];
+  return {t, g: T.g, naval: !!T.naval, size, label: T.label, group: VS_GROUPS[T.g].label, color: VS_GROUPS[T.g].color, estLen: !len};
+}
+
+/* ---- symbol geometry: aircraft top-down (nose up, ±12 units); vessels side profile (bow right) ---- */
+const sym = pts => 'M' + pts.map(p => p.join(',')).join(' L') + ' L' + pts.slice(1, -1).reverse().map(([x, y]) => `${-x},${y}`).join(' L') + ' Z';
+const rc = (x, y, w, hh) => `M${x},${y} h${w} v${hh} h${-w} Z`;
+const pr = (x, y, w, hh) => rc(x, y, w, hh) + ' ' + rc(-x - w, y, w, hh);
+const NARROW = sym([[0, -12], [1, -11], [1.3, -9], [1.3, -3], [11, 2.5], [11, 3.8], [1.3, 1.5], [1.2, 7], [4.5, 9.5], [4.5, 10.6], [0.9, 10], [0, 11.5]]);
+const HEAVY = sym([[0, -12.5], [1.4, -11.3], [1.9, -8.5], [1.9, -3], [12, 3], [12, 4.4], [1.9, 2], [1.7, 7.5], [5.5, 10], [5.5, 11.2], [1, 10.6], [0, 12.5]]);
+const AC_ICON = {
+  narrow:       [{d: NARROW}, {d: pr(3.6, -2.6, 1.2, 3)}],
+  heavy:        [{d: HEAVY}, {d: pr(4.6, -2.2, 1.5, 3.4)}],
+  quad:         [{d: HEAVY}, {d: pr(4.2, -2.4, 1.3, 3)}, {d: pr(7.8, 0, 1.2, 2.8)}],
+  regional:     [{d: sym([[0, -11], [0.95, -10], [1.2, -8], [1.2, -2], [9, 2.5], [9, 3.5], [1.2, 1.8], [1.1, 7], [4, 9.2], [4, 10.2], [0.8, 9.7], [0, 11]])}, {d: pr(3.2, -1.8, 1, 2.6)}],
+  turboprop:    [{d: sym([[0, -11], [0.9, -10], [1.1, -8], [1.1, -3], [11, -2.2], [11, -0.4], [1.1, 0.4], [0.9, 7], [4, 8.5], [4, 9.6], [0.7, 9.2], [0, 10.5]])}, {d: pr(3.5, -5.8, 1.2, 5)}],
+  bizjet:       [{d: sym([[0, -11], [0.8, -10], [1, -7], [1, -1], [7.5, 3], [7.5, 4], [1, 2.5], [0.9, 8.5], [4, 10.5], [4, 11.3], [0.6, 10.8], [0, 11.5]])}, {d: pr(1.2, 4, 1.4, 3.6)}],
+  light:        [{d: sym([[0, -9], [0.8, -8.5], [0.9, -6], [0.9, -5], [8.5, -4.8], [8.5, -2.8], [0.9, -2.6], [0.5, 5], [3, 6], [3, 7], [0.4, 7], [0, 7.5]])}],
+  fighter:      [{d: sym([[0, -12], [0.8, -9], [1.3, -5], [1.6, -2], [8, 4], [8, 5.5], [2, 5], [2, 6.5], [4.5, 9.5], [4.5, 10.5], [1.6, 10], [1.2, 11], [0, 11]])}],
+  miltransport: [{d: sym([[0, -11], [1.3, -10.5], [1.9, -8.5], [1.9, -3.5], [12, -2.8], [12, -0.8], [1.9, -0.5], [1.6, 6], [5.5, 8], [5.5, 9.5], [1.2, 9], [0, 10]])}, {d: pr(3.8, -6.5, 1.2, 4.5)}, {d: pr(7.8, -6, 1.2, 4.2)}],
+  tanker:       [{d: HEAVY}, {d: pr(4.6, -2.2, 1.5, 3.4)}, {d: rc(-0.4, 11.5, 0.8, 4.8)}, {d: 'M-2.2,15.6 L0,14.4 L2.2,15.6 L0,15.1 Z'}],
+  isr:          [{d: NARROW}, {d: pr(3.6, -2.6, 1.2, 3)}, {d: 'M-4,3.5 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0 Z', cls: 'dome'}],
+  drone:        [{d: sym([[0, -7], [0.9, -6], [1, -3], [1, -2.2], [12, -1.8], [12, -0.6], [1, -0.5], [0.7, 5], [3.5, 7.5], [3.2, 8.2], [0.5, 6.8], [0, 7.3]])}],
+  helicopter:   [{d: 'M-9,0 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0 Z', cls: 'rotor'},
+                 {d: 'M0,-6 C2.4,-6 2.6,-3 2.4,0 C2.2,2 1,3 0.6,3.2 L0.5,10 L2.2,10 L2.2,11 L-2.2,11 L-2.2,10 L-0.5,10 L-0.6,3.2 C-1,3 -2.2,2 -2.4,0 C-2.6,-3 -2.4,-6 0,-6 Z'},
+                 {d: 'M-8.5,-0.3 L8.5,-0.3 L8.5,0.3 L-8.5,0.3 Z M-0.3,-8.5 L0.3,-8.5 L0.3,8.5 L-0.3,8.5 Z', tf: 'rotate(40)'}],
+  unknown:      [{d: 'M0,-10 L5.2,9 L0,5.2 L-5.2,9 Z'}],
+};
+const HULL = 'M-11,-1 L12,-1 L10,3 L-10,3 Z';
+const VS_ICON = {
+  container: [HULL, 'M-6.5,-1 V-4.2 H9 V-1 Z', 'M-10.5,-1 V-6.5 H-8 V-1 Z'],
+  bulk:      [HULL, 'M-6,-1 V-2.4 H-3 V-1 Z', 'M-1.5,-1 V-2.4 H1.5 V-1 Z', 'M3,-1 V-2.4 H6 V-1 Z', 'M7.5,-1 V-2.4 H10 V-1 Z', 'M-10.5,-1 V-6 H-7.5 V-1 Z'],
+  general:   [HULL, 'M-10,-1 V-5.5 H-6.5 V-1 Z', 'M-2,-1 V-7 H-1.2 V-1 Z', 'M-1.2,-6.5 L4,-3 L3.6,-2.6 L-1.2,-5.6 Z', 'M5,-1 V-7 H5.8 V-1 Z', 'M5.8,-6.5 L10,-3 L9.6,-2.6 L5.8,-5.6 Z'],
+  roro:      ['M-11,-6 H9.5 Q11.8,-5.5 11.8,-2.5 L10,3 H-10 Z', 'M6,-6 V-7.4 H9.3 V-6 Z'],
+  tanker:    ['M-11,-0.5 L12,-0.5 L10,3 L-10,3 Z', 'M-7,-0.5 V-1.4 H10 V-0.5 Z', 'M-10.5,-0.5 V-6 H-7.5 V-0.5 Z', 'M-9.6,-6 V-7.8 H-8.4 V-6 Z'],
+  gas:       ['M-11,-0.5 L12,-0.5 L10,3 L-10,3 Z', 'M-6.4,-0.5 A2.2,2.2 0 0 1 -2,-0.5 Z', 'M-1.6,-0.5 A2.2,2.2 0 0 1 2.8,-0.5 Z', 'M3.2,-0.5 A2.2,2.2 0 0 1 7.6,-0.5 Z', 'M-10.5,-0.5 V-6 H-7.5 V-0.5 Z'],
+  cruise:    [HULL, 'M-9.5,-1 V-5 L-8,-6.5 H6 L9.5,-3.5 L10.5,-1 Z', 'M-5,-6.5 V-8.8 H-2.6 V-6.5 Z'],
+  ferry:     [HULL, 'M-8.5,-1 V-4.5 H5.5 L8.5,-1 Z', 'M-6,-4.5 V-6.5 H-4.3 V-4.5 Z'],
+  hsc:       ['M-11,-1 H10 Q12,-1 12,0 L9,2 H-10 Z', 'M-8,-1 V-3.8 L-6,-4.6 H4 L8,-1 Z'],
+  tug:       ['M-8,-1 H8 Q9.5,-1 9.5,0.5 L7.5,3 H-7.5 L-8.5,1 Z', 'M-2.5,-1 V-5.5 H3.5 V-1 Z', 'M0.2,-5.5 V-8.5 H0.8 V-5.5 Z', 'M-7,-1 V-2.2 H-5.5 V-1 Z'],
+  pilot:     ['M-8,-1 H9 L6.5,2 H-7.5 Z', 'M-4,-1 V-3.8 H2 L4.2,-1 Z', 'M-1,-3.8 V-6 H-0.4 V-3.8 Z'],
+  offshore:  ['M-11,-1 H9 L11.5,-3.5 L10.5,3 H-10 Z', 'M4.5,-1 V-6.5 H9.5 V-1 Z', 'M-8,-1 V-4 H-7.3 V-1 Z'],
+  frigate:   ['M-12,-0.5 H10 L12.5,-1.8 L10.5,2.5 H-11 Z', 'M-6.5,-0.5 V-3 H-2.5 V-5 H2 V-3 H5 V-0.5 Z', 'M-0.9,-5 L0,-9.5 L0.9,-5 Z', 'M7.2,-0.5 V-1.7 H8.6 L11,-2 V-1.6 L8.6,-1.3 V-0.5 Z'],
+  corvette:  ['M-9.5,-0.5 H8 L10.5,-1.8 L8.5,2.5 H-9 Z', 'M-4.5,-0.5 V-3.6 H2.5 V-0.5 Z', 'M-1.4,-3.6 L-0.6,-7.6 L0.2,-3.6 Z', 'M5,-0.5 V-1.6 H6.3 L8.5,-1.9 V-1.5 L6.3,-1.2 V-0.5 Z'],
+  patrol:    ['M-8,-0.5 H7 L9.5,-1.6 L7.5,2 H-7.5 Z', 'M-3.5,-0.5 V-3.2 H2 L3.5,-0.5 Z', 'M-1.2,-3.2 V-6 H-0.6 V-3.2 Z', 'M4.6,-0.5 V-1.3 H5.6 L7.3,-1.6 V-1.2 L5.6,-1 V-0.5 Z'],
+  submarine: ['M-11,0.5 Q-11,-1.2 -8,-1.2 H9 Q12,-1.2 12,0.5 Q12,2.2 9,2.2 H-8 Q-11,2.2 -11,0.5 Z', 'M1,-1.2 V-5 H4.2 L4.8,-1.2 Z', 'M-10,-0.6 L-11.8,-2.8 H-11 L-9,-0.9 Z'],
+  carrier:   ['M-12,-3 H12.5 L10.5,2.5 H-10.5 L-11,-1 Z', 'M2,-3 V-7 H5 V-3 Z', 'M3.2,-7 V-9 H3.8 V-7 Z'],
+  trawler:   ['M-9,-1 H7 L10,-3 L8,3 H-8 Z', 'M2,-1 V-4.8 H6.2 V-1 Z', 'M-8.6,-1 L-7.2,-7 H-6.2 L-7.4,-1 Z', 'M3.8,-4.8 V-7.5 H4.4 V-4.8 Z'],
+  fishing:   ['M-8,-1 H7 L9.5,-2.5 L7.5,3 H-7.5 Z', 'M-0.5,-1 V-4.2 H3.5 L4.3,-1 Z', 'M-5,-1 V-7 H-4.4 V-1 Z'],
+  yacht:     ['M-10,-1 H9 L12,-2.4 L9.8,1.6 H-9 Z', 'M-7,-1 V-3 L-3.2,-4.8 H3 L6.3,-1 Z'],
+  sailing:   ['M-8,0 H9 L7,2.6 H-6.5 Z', 'M-0.4,-0.6 V-11 L-7,-0.6 Z', 'M0.6,-10 L6.5,-0.6 H0.6 Z'],
+  navaid:    ['M0,-6 L3.2,0 L0,6 L-3.2,0 Z'],
+  unknown:   ['M-10,-1 H10 L12,-2 L9.5,3 H-9.5 Z', 'M-3,-1 V-4 H3 V-1 Z'],
+};
+function acShape(c) {
+  const g = el('g', {class: 'acs' + (c.mil ? ' mil' : '')});
+  (AC_ICON[c.cls === 'heavy' && c.quad ? 'quad' : c.cls] || AC_ICON.unknown).forEach(p => g.appendChild(el('path', Object.assign({class: p.cls || 'ic', d: p.d}, p.tf ? {transform: p.tf} : {}))));
+  return g;
+}
+function vsShape(c) {
+  const g = el('g', {class: 'vss' + (c.naval ? ' naval' : ''), style: `--vc:${c.color}`, transform: 'translate(0,2)'});
+  (VS_ICON[c.t] || VS_ICON.unknown).forEach(d => g.appendChild(el('path', {class: 'ic', d})));
+  return g;
+}
+function iconSvg(kind, c, w = 34, hgt = 24) {
+  const s = el('svg', {viewBox: kind === 'ac' ? '-14 -14 28 28' : '-13 -11 26 16', width: w, height: hgt, 'aria-hidden': 'true', class: 'isvg'});
+  s.appendChild(kind === 'ac' ? acShape(c) : vsShape(c)); return s;
+}
+data.flights.forEach(f => { f._c = classifyAircraft(f); });
+data.vessels.forEach(v => { v._c = classifyVessel(v); });
+
 
 /* ---------- tooltip ---------- */
 const tip = document.getElementById('tooltip');
@@ -527,7 +741,7 @@ const placeCats = countBy(data.places, 'q');
 barTable(document.querySelector('[data-view="places-chart"]'), placeCats, 'listings');
 document.querySelector('[data-view="places-table"]').appendChild(table(['Type', 'Listings'], placeCats.map(i => [i.label, i.v]), [false, true]));
 
-const vesselHours = (() => { const m = {}; data.vessels.forEach(v => { const k = nice(v.type); m[k] = (m[k] || 0) + v.hrs; }); return Object.entries(m).map(([label, v]) => ({label, v: Math.round(v * 10) / 10})).sort((a, b) => b.v - a.v); })();
+const vesselHours = (() => { const m = {}; data.vessels.forEach(v => { const k = v._c.label; m[k] = (m[k] || 0) + v.hrs; }); return Object.entries(m).map(([label, v]) => ({label, v: Math.round(v * 10) / 10})).sort((a, b) => b.v - a.v); })();
 barTable(document.querySelector('[data-view="vesselcat-chart"]'), vesselHours, 'hours tracked');
 document.querySelector('[data-view="vesselcat-table"]').appendChild(table(['Type', 'Hours'], vesselHours.map(i => [i.label, i.v]), [false, true]));
 
@@ -676,22 +890,27 @@ data.cellbins.forEach(c => {
 data.celltower.forEach(c => marker('layer-celltower', 'm-celltower', c.x, c.y, el('path', {d: 'M0,-4.5 L2.6,4 L-2.6,4 Z'}), c.label, 'comms tower / mast · OpenStreetMap', g => select({marker: g, kind: 'Cell / comms tower', title: c.label, lines: [coord(latOf(c.y), lonOf(c.x))], links: siteLinks(c, 18).concat([LINK.opencellid(c.x, c.y), ...['Cyta', 'Epic', 'PrimeTel'].map(o => LINK.cellmapper(c.x, c.y, o))]), source: 'OpenStreetMap', note: 'CellMapper shows the crowd-mapped eNodeB and sectors per operator around this mast.'})));
 data.wireless.forEach(w => marker('layer-wireless', 'm-wireless', w.x, w.y, el('circle', {r: 1.8}), 'Wireless access point', `${w.type} · ${w.encryption || 'unknown encryption'} · name withheld`, g => select({marker: g, kind: 'Wireless access point · ' + w.type, title: (w.encryption || 'unknown encryption') + ' · name withheld', lines: [coord(latOf(w.y), lonOf(w.x))], links: [LINK.wigle(w.x, w.y, true), LINK.osm(w.x, w.y, 18), LINK.gsat(w.x, w.y)], source: 'WiGLE (network name withheld)', note: 'WiGLE may ask for a free login to show network detail.'})));
 data.places.forEach(p => marker('layer-places', 'm-place', p.x, p.y, el('circle', {r: 2.4}), p.label, `${p.q} · ${p.src}`, g => select({marker: g, kind: 'Place · ' + p.q, title: p.label, lines: [coord(latOf(p.y), lonOf(p.x))], links: [LINK.osm(p.x, p.y, 18, true), lk('OSM search', `https://www.openstreetmap.org/search?query=${enc(p.label)}#map=16/${latOf(p.y).toFixed(5)}/${lonOf(p.x).toFixed(5)}`), lk('Google Maps', `https://www.google.com/maps/search/${enc(p.label)}/@${latOf(p.y).toFixed(5)},${lonOf(p.x).toFixed(5)},17z`), lk('Apple Maps', `https://maps.apple.com/?q=${enc(p.label)}&ll=${latOf(p.y).toFixed(5)},${lonOf(p.x).toFixed(5)}&z=17`), LINK.osmQuery(p.x, p.y), LINK.gsat(p.x, p.y)], source: p.src === 'tomtom' ? 'TomTom Search API' : 'Mapbox Search API', note: 'TomTom and Mapbox have no public place pages, so OpenStreetMap is the viewer.'})));
+const gVs = document.getElementById('layer-vessels'), gFl = document.getElementById('layer-flights');
+Object.keys(VS_GROUPS).forEach(k => gVs.appendChild(el('g', {id: 'layer-vessels-' + k})));
+Object.keys(AC_CLASSES).forEach(k => gFl.appendChild(el('g', {id: 'layer-flights-' + k})));
+function vesselGlyph(c) { const z = el('g', {class: 'zs'}); z.appendChild(el('circle', {class: 'hit', r: Math.max(6, 10 * c.size)})); const s = vsShape(c); s.setAttribute('transform', `scale(${(.95 * c.size).toFixed(3)}) translate(0,2)`); z.appendChild(s); return z; }
+function aircraftGlyph(c, trk) { const z = el('g', {class: 'zs'}); z.appendChild(el('circle', {class: 'hit', r: Math.max(5, 8 * c.size)})); const s = acShape(c); s.setAttribute('transform', `rotate(${trk || 0}) scale(${(.62 * c.size).toFixed(3)})`); z.appendChild(s); return z; }
 data.vessels.forEach((v, i) => {
-  const g = marker('layer-vessels', 'm-vessel', v.x, v.y, el('path', {d: 'M0,-4 L3.2,3.2 L0,1.4 L-3.2,3.2 Z'}), v.name || 'unnamed vessel', `${nice(v.type)} · ${nice(v.gear)} · ${v.flag || '—'} · ${v.hrs} h tracked`, () => select(items.vessel[i]));
+  const c = v._c;
+  const g = marker('layer-vessels-' + c.g, 'm-vessel', v.x, v.y, vesselGlyph(c), v.name || 'unnamed vessel', `${c.label} · ${c.group} · ${v.flag || '—'}${v.length ? ' · ' + v.length + ' m' : ''} · ${v.hrs} h tracked`, () => select(items.vessel[i]));
   const idLine = v.mmsi ? `MMSI ${v.mmsi}${v.callsign ? ' · call sign ' + v.callsign : ''}${v.imo ? ' · IMO ' + v.imo : ''}${v.length ? ' · ' + v.length + ' m' : ''}` : 'identifiers not resolved';
-  items.vessel[i] = {marker: g, kind: 'Vessel · ' + v.flag + (v.type_specific ? ' · ' + v.type_specific : ''), title: v.name, lines: [idLine, `${nice(v.type)} · ${nice(v.gear)}`, `${v.hrs} h tracked · ${coord(latOf(v.y), lonOf(v.x))}`], links: vesselLinks(v).concat([LINK.osm(v.x, v.y, 12)]), source: 'Global Fishing Watch AIS; identifiers via Datalastic', note: 'Vessel pages show the live AIS position, which will differ from the snapshot.'};
-  g.insertBefore(el('circle', {class: 'halo', r: 5, style: `animation-delay:${(i % 8) * .3}s`}), g.firstChild);
+  items.vessel[i] = {marker: g, kind: 'Vessel · ' + c.group + ' · ' + c.label, title: v.name, lines: [idLine, `${v.flag || '—'} · AIS ${nice(v.type)} · ${nice(v.gear)}${v.type_specific ? ' · ' + v.type_specific : ''}`, `${v.hrs} h tracked · ${coord(latOf(v.y), lonOf(v.x))}`], links: vesselLinks(v).concat([LINK.osm(v.x, v.y, 12)]), source: 'Global Fishing Watch AIS; identifiers via Datalastic', note: 'Vessel pages show the live AIS position, which will differ from the snapshot.'};
 });
 data.flights.forEach((f, i) => {
-  const g = marker('layer-flights', 'm-flight', f.x, f.y, el('path', {d: 'M0,-5 L2.6,4.5 L0,2.6 L-2.6,4.5 Z', transform: `rotate(${f.trk || 0})`}), f.callsign || f.reg || 'unknown', `${f.type || ''} · ${fmt(f.alt)} ft · ${fmt(f.spd)} kt · heading ${f.trk == null ? '—' : f.trk + '°'}`, () => select(items.flight[i]));
-  items.flight[i] = {marker: g, kind: 'Aircraft · ' + (f.type || 'type unknown'), title: (f.callsign || 'no callsign') + (f.reg ? ' · ' + f.reg : ''), lines: [`${fmt(f.alt)} ft · ${fmt(f.spd)} kt · heading ${f.trk == null ? '—' : f.trk + '°'}`, coord(latOf(f.y), lonOf(f.x))], links: flightLinks(f).concat([LINK.osm(f.x, f.y, 9)]), source: 'FlightRadar24 positions', note: 'Flightradar24 opens the live flight if still airborne, otherwise its latest history.'};
-  g.insertBefore(el('circle', {class: 'halo', r: 5, style: `animation-delay:${(i % 8) * .3}s`}), g.firstChild);
+  const c = f._c;
+  const g = marker('layer-flights-' + c.cls, 'm-flight' + (c.mil ? ' mil' : ''), f.x, f.y, aircraftGlyph(c, f.trk), f.callsign || f.reg || 'unknown', `${c.label}${c.mil ? ' · military / state' : ''} · ${f.type || '—'} · ${fmt(f.alt)} ft · ${fmt(f.spd)} kt · heading ${f.trk == null ? '—' : f.trk + '°'}`, () => select(items.flight[i]));
+  items.flight[i] = {marker: g, kind: 'Aircraft · ' + c.label + (c.mil ? ' · military' : '') + ' · ' + (f.type || 'type unknown'), title: (f.callsign || 'no callsign') + (f.reg ? ' · ' + f.reg : ''), lines: [`${fmt(f.alt)} ft · ${fmt(f.spd)} kt · heading ${f.trk == null ? '—' : f.trk + '°'}`, coord(latOf(f.y), lonOf(f.x))], links: flightLinks(f).concat([LINK.osm(f.x, f.y, 9)]), source: 'FlightRadar24 positions', note: 'Flightradar24 opens the live flight if still airborne, otherwise its latest history.'};
 });
 
 /* ---------- KPIs + layer chips ---------- */
 const layers = [
-  {key: 'flights',   label: 'Flights',        node: 'layer-flights',   color: 'var(--c-flights)',   count: data.flights.length,   shape: 'arrow'},
-  {key: 'vessels',   label: 'Vessels',        node: 'layer-vessels',   color: 'var(--c-vessels)',   count: data.vessels.length,   shape: 'chevron'},
+  {key: 'flights',   label: 'Flights',        node: 'layer-flights',   color: 'var(--c-flights)',   count: data.flights.length,   shape: 'arrow', sub: `${data.flights.filter(f => f._c.mil).length} military · ${new Set(data.flights.map(f => f._c.cls)).size} classes`},
+  {key: 'vessels',   label: 'Vessels',        node: 'layer-vessels',   color: 'var(--c-vessels)',   count: data.vessels.length,   shape: 'chevron', sub: `${data.vessels.filter(v => v._c.naval).length} naval · ${new Set(data.vessels.map(v => v._c.t)).size} classes`},
   {key: 'hex',       label: 'GNSS hexes',     node: 'layer-hex',       color: 'var(--heat-1)',      count: data.hexes.length,     shape: 'hex', sub: `${degraded} degraded`},
   {key: 'infra',     label: 'Infrastructure', node: 'layer-infra',     color: 'var(--c-infra)',     count: data.infra.length,     shape: 'square'},
   {key: 'places',    label: 'Places',         node: 'layer-places',    color: 'var(--c-places)',    count: data.places.length,    shape: 'dot'},
@@ -721,6 +940,21 @@ layers.forEach(L => {
     chip.setAttribute('aria-pressed', String(!on));
   });
   legend.appendChild(chip);
+  if (L.key === 'flights' || L.key === 'vessels') {
+    const grp = h('span', 'subgroup'), isAc = L.key === 'flights';
+    const counts = {}; (isAc ? data.flights : data.vessels).forEach(o => { const k = isAc ? o._c.cls : o._c.g; (counts[k] = counts[k] || []).push(o._c); });
+    Object.keys(isAc ? AC_CLASSES : VS_GROUPS).filter(k => counts[k]).forEach(k => {
+      const sc = h('button', 'chip sub'); sc.setAttribute('aria-pressed', 'true');
+      const sample = counts[k][0];
+      sc.appendChild(iconSvg(isAc ? 'ac' : 'vs', isAc ? Object.assign({}, sample) : Object.assign({}, sample)));
+      sc.appendChild(document.createTextNode(isAc ? AC_CLASSES[k].label : VS_GROUPS[k].label));
+      const b = h('b', null, ' ' + counts[k].length); sc.appendChild(b);
+      sc.title = 'Toggle ' + (isAc ? AC_CLASSES[k].label : VS_GROUPS[k].label);
+      sc.addEventListener('click', () => { const off = sc.classList.toggle('off'); document.getElementById((isAc ? 'layer-flights-' : 'layer-vessels-') + k).toggleAttribute('hidden', off); sc.setAttribute('aria-pressed', String(!off)); });
+      grp.appendChild(sc);
+    });
+    legend.appendChild(grp);
+  }
   if (L.key === 'infra') {
     const grp = h('span', 'subgroup');
     INFRA_CATS.forEach(c => {
@@ -755,18 +989,41 @@ function linkRow(kind) {
       a.addEventListener('click', e => e.stopPropagation()); wrap.appendChild(a);
     });
     cell.appendChild(wrap);
+    const cc = tr.children[2], obj = kind === 'flight' ? data.flights[i] : data.vessels[i], lab = cc.textContent;
+    cc.textContent = ''; const ci = h('span', 'clsicon'); ci.appendChild(iconSvg(kind === 'flight' ? 'ac' : 'vs', obj._c, 20, 14)); ci.appendChild(document.createTextNode(lab)); cc.appendChild(ci);
   };
 }
 document.getElementById('fl-n').textContent = data.flights.length + ' · click a row for its source';
 document.getElementById('flight-table').appendChild(table(
-  ['Callsign', 'Open in', 'Type', 'Reg', 'Alt ft', 'Speed kt', 'Hdg'],
-  data.flights.map(f => [f.callsign || '—', '', f.type || '—', f.reg || '—', f.alt, f.spd, f.trk]),
-  [false, false, false, false, true, true, true], linkRow('flight')));
+  ['Callsign', 'Open in', 'Class', 'Type', 'Reg', 'Alt ft', 'Speed kt', 'Hdg'],
+  data.flights.map(f => [f.callsign || '—', '', f._c.label, f.type || '—', f.reg || '—', f.alt, f.spd, f.trk]),
+  [false, false, false, false, false, true, true, true], linkRow('flight')));
 document.getElementById('vs-n').textContent = data.vessels.length + ' · click a row for its source';
 document.getElementById('vessel-table').appendChild(table(
-  ['Name', 'Open in', 'MMSI', 'Call sign', 'Type', 'Gear', 'Flag', 'Hours'],
-  data.vessels.map(v => [v.name || '—', '', v.mmsi || '—', v.callsign || '—', nice(v.type), nice(v.gear), v.flag || '—', v.hrs]),
-  [false, false, false, false, false, false, false, true], linkRow('vessel')));
+  ['Name', 'Open in', 'Class', 'MMSI', 'Call sign', 'Length', 'Gear', 'Flag', 'Hours'],
+  data.vessels.map(v => [v.name || '—', '', v._c.label, v.mmsi || '—', v.callsign || '—', v.length ? v.length + ' m' : '—', nice(v.gear), v.flag || '—', v.hrs]),
+  [false, false, false, false, false, false, false, false, true], linkRow('vessel')));
+
+/* ---------- symbol key ---------- */
+(function () {
+  const acList = document.getElementById('sym-ac'), vsList = document.getElementById('sym-vs');
+  const row = (svg, name, ex, n) => { const r = h('div', 'sym' + (n ? '' : ' zero')); r.appendChild(svg); const t = h('div', 'nm', name); t.appendChild(h('span', 'ex', ex)); r.appendChild(t); r.appendChild(h('b', null, String(n))); return r; };
+  Object.entries(AC_CLASSES).forEach(([k, A]) => {
+    const n = data.flights.filter(f => f._c.cls === k).length;
+    acList.appendChild(row(iconSvg('ac', {cls: k, mil: !!A.mil}), A.label, A.ex, n));
+  });
+  const heli = data.flights.filter(f => f._c.cls === 'helicopter' && f._c.mil).length;
+  acList.appendChild(row(iconSvg('ac', {cls: 'helicopter', mil: true}), 'Military helicopter', 'UH-60 · NH90 · AH-64 · Merlin', heli));
+  Object.entries(VS_GROUPS).forEach(([gk, G]) => {
+    const types = Object.entries(VS_TYPES).filter(([, T]) => T.g === gk);
+    const gn = data.vessels.filter(v => v._c.g === gk).length;
+    const hd = h('div', 'symgrp'); const sw = h('i'); sw.style.background = G.color; hd.appendChild(sw); hd.appendChild(document.createTextNode(G.label + ' ')); hd.appendChild(h('em', null, gn + ' in snapshot')); vsList.appendChild(hd);
+    types.forEach(([tk, T]) => {
+      const n = data.vessels.filter(v => v._c.t === tk).length;
+      vsList.appendChild(row(iconSvg('vs', {t: tk, g: gk, color: G.color, naval: !!T.naval}), T.label, (T.naval ? 'naval · ' : '') + 'typical ' + T.len + ' m', n));
+    });
+  });
+})();
 
 /* ---------- headlines ---------- */
 const newsList = document.getElementById('news-list');
@@ -809,6 +1066,8 @@ function toSvgPoint(X, Y) { const pt = svg.createSVGPoint(); pt.x = X; pt.y = Y;
 function applyView() {
   viewport.setAttribute('transform', `translate(${view.px},${view.py}) translate(${cx},${cy}) rotate(${view.rot}) scale(${view.scale}) translate(${-cx},${-cy})`);
   compass.setAttribute('transform', `translate(858,44) rotate(${view.rot})`);
+  viewport.style.setProperty('--zs', Math.pow(view.scale, -.6).toFixed(4));
+  viewport.style.setProperty('--unrot', (-view.rot) + 'deg');
   const k = 1 / view.scale;
   labelNodes.forEach(t => t.setAttribute('transform', `translate(${t._x},${t._y}) rotate(${-view.rot}) scale(${k})`));
   /* map-centre -> lat/lon for the "open this view in OSM" button */

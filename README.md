@@ -19,6 +19,12 @@ Open-source intelligence snapshot of Cyprus, the Levant and the Eastern Mediterr
 
 Click any marker, hexagon or table row to get its **Open in …** buttons. The **Open in source app on click** chip makes a click jump straight to the origin app instead.
 
+## Aircraft and vessel symbols
+
+- **Aircraft**: the icon comes from the ICAO type code (wide-body, narrow-body, regional, turboprop, business jet, light, helicopter, fighter, military transport, tanker, AEW/ISR, drone). Known military/state callsigns and serials switch the icon to the military colour. The icon is rotated to the aircraft's track and sized by class.
+- **Vessels**: side-profile icons grouped and coloured using MarineTraffic/VesselFinder ship-type groups (Cargo, Tanker, Passenger, High-speed, Tugs & special craft, Fishing, Pleasure, Navigation aids, Unspecified). Naval types (frigate/destroyer, corvette, patrol, submarine, carrier/amphibious) are in *Tugs & special craft*, the same group MarineTraffic uses for military ops. Icons are sized by hull length.
+- The **Symbol key** card on the page lists every class and how many are in the snapshot.
+
 ## Map controls
 
 - Drag to pan, scroll or pinch to zoom, `[` `]` to rotate, `0` to reset
