@@ -14,6 +14,13 @@ Environment
   PAGES_BASE_URL      e.g. https://themurdoc.github.io/levantine-watch/ (to read the previous state.json)
   AIS_LISTEN_SECONDS  how long to listen to the AIS stream per run (default 90)
   GNSS_WINDOW_HOURS   rolling window for GNSS hexes (default 6)
+  HAPI_APP_IDENTIFIER HDX HAPI app identifier (humanitarian context); GDACS needs no key
+  NMS_CLIENT_ID / NMS_CLIENT_SECRET / NMS_ENV   FAA NMS-API (airspace NOTAMs), see collector/nms.py
+  NAVTEX_INBOX_FILE   NAVTEX inbox issues fetched by the workflow, see collector/navtex.py
+  (see README.md for the other optional keys)
+
+ACLED is never collected here. This script feeds the PUBLIC site; ACLED data is licensed for
+internal research use only and is handled by the private local build (private/acled_private.py).
 """
 from __future__ import annotations
 
@@ -31,10 +38,15 @@ import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import extra  # noqa: E402
+import navtex  # noqa: E402
+import nms  # noqa: E402
 
 # Map extent of the dashboard (matches the page's linear lat/lon grid).
 LAT_MIN, LAT_MAX = 29.0, 37.3
 LON_MIN, LON_MAX = 32.0, 40.2
+# AIS only: the Crete-Cyprus cable corridor west of the old map edge, where the GSI survey ships work.
+# Set AIS_CORRIDOR=0 to listen to the main box only (fewer messages).
+AIS_CORRIDOR = (33.3, 36.2, 23.5, 32.0)  # lat_min, lat_max, lon_min, lon_max
 # Four 250 nm circles cover the whole map extent.
 AIR_POINTS = [(35.3, 33.8), (35.3, 38.4), (31.2, 33.8), (31.2, 38.4)]
 AIR_RADIUS_NM = 250
@@ -103,6 +115,17 @@ def iso(dt: datetime) -> str:
 def in_box(lat, lon) -> bool:
     return lat is not None and lon is not None and LAT_MIN <= lat <= LAT_MAX and LON_MIN <= lon <= LON_MAX
 
+
+def ais_boxes() -> list[tuple[float, float, float, float]]:
+    boxes = [(LAT_MIN, LAT_MAX, LON_MIN, LON_MAX)]
+    if os.environ.get("AIS_CORRIDOR", "1") != "0":
+        boxes.append(AIS_CORRIDOR)
+    return boxes
+
+
+def in_ais_area(lat, lon) -> bool:
+    return lat is not None and lon is not None and any(a <= lat <= b and c <= lon <= d for a, b, c, d in ais_boxes())
+
 def log(*a):
     print("[collect]", *a, file=sys.stderr, flush=True)
 
@@ -112,7 +135,7 @@ def load_previous_state(out: Path) -> dict:
     local = out / "state.json"
     if local.exists():
         try:
-            return json.loads(local.read_text())
+            return json.loads(local.read_text(encoding="utf-8"))
         except Exception:
             pass
     base = os.environ.get("PAGES_BASE_URL", "").strip()
@@ -199,7 +222,7 @@ def update_gnss(raw: list[dict], state: dict, window_h: float, t_now: datetime) 
 # ------------------------------------------------------------------ vessels (aisstream.io)
 async def _ais_listen(key: str, seconds: int, cache: dict) -> int:
     import websockets
-    sub = {"APIKey": key, "BoundingBoxes": [[[LAT_MIN, LON_MIN], [LAT_MAX, LON_MAX]]],
+    sub = {"APIKey": key, "BoundingBoxes": [[[a, c], [b, d]] for a, b, c, d in ais_boxes()],
            "FilterMessageTypes": ["PositionReport", "StandardClassBPositionReport", "ExtendedClassBPositionReport", "ShipStaticData", "StaticDataReport"]}
     n = 0
     deadline = time.monotonic() + seconds
@@ -228,7 +251,7 @@ async def _ais_listen(key: str, seconds: int, cache: dict) -> int:
             body = (m.get("Message") or {}).get(mt) or {}
             if mt in ("PositionReport", "StandardClassBPositionReport", "ExtendedClassBPositionReport"):
                 lat, lon = body.get("Latitude", meta.get("latitude")), body.get("Longitude", meta.get("longitude"))
-                if in_box(lat, lon):
+                if in_ais_area(lat, lon):
                     v.update(lat=round(lat, 5), lon=round(lon, 5), t=int(time.time()))
                     for src, dst in (("Sog", "sog"), ("Cog", "cog"), ("TrueHeading", "hdg"), ("NavigationalStatus", "status")):
                         if body.get(src) is not None:
@@ -343,6 +366,21 @@ def fetch_news(limit: int = 20, extra: list[dict] | None = None):
     return (out or None), {"name": "Headlines", "note": note, "ok": bool(out), "live": True}, allitems
 
 
+# ------------------------------------------------------------------ public-site guard
+# Keys that only the private, local build may contain (ACLED events, ACLED-derived HAPI conflict counts).
+PRIVATE_KEYS = ("conflict", "hapi_conflict", "acled", "private")
+
+
+def scrub_private(live: dict, state: dict) -> None:
+    """Make sure nothing licensed for private use can reach live.json / state.json on the public site."""
+    for k in PRIVATE_KEYS:
+        live.pop(k, None)
+        state.pop(k, None)
+    for k in ("acled", "hapi_conflict"):
+        state.get("_t", {}).pop(k, None)
+    live["sources"] = [s_ for s_ in live.get("sources", []) if not str(s_.get("name", "")).upper().startswith("ACLED")]
+
+
 # ------------------------------------------------------------------ main
 def main() -> int:
     ap = argparse.ArgumentParser()
@@ -352,6 +390,9 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
     t_now = now_utc()
     state = load_previous_state(out)
+    scrub_private({}, state)
+    if any(os.environ.get(k) for k in ("ACLED_EMAIL", "ACLED_PASSWORD", "ACLED_API_KEY")):
+        log("WARNING: ACLED credentials are set but ignored. ACLED runs only in the private local build, never on the public site.")
     window_h = float(os.environ.get("GNSS_WINDOW_HOURS", "6"))
     listen = int(os.environ.get("AIS_LISTEN_SECONDS", "90"))
 
@@ -403,7 +444,9 @@ def main() -> int:
     live["sources"].append(gst)
     live["events"] = extra.events_from_headlines(allnews)
 
-    for key, fn in (("hotspots", extra.fetch_firms), ("outages", extra.fetch_outages), ("conflict", extra.fetch_acled)):
+    for key, fn in (("hotspots", extra.fetch_firms), ("outages", extra.fetch_outages),
+                    ("hazards", extra.fetch_gdacs), ("humanitarian", extra.fetch_hapi_context), ("navtex", navtex.fetch_navtex),
+                    ("notams", nms.fetch_notams)):
         try:
             data_, st_ = fn(state)
         except Exception as e:  # never let one source break the run
@@ -413,10 +456,12 @@ def main() -> int:
         live["sources"].append(st_)
 
     state["updated"] = iso(t_now)
-    (out / "live.json").write_text(json.dumps(live, separators=(",", ":"), ensure_ascii=False))
-    (out / "state.json").write_text(json.dumps(state, separators=(",", ":"), ensure_ascii=False))
+    scrub_private(live, state)
+    (out / "live.json").write_text(json.dumps(live, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
+    (out / "state.json").write_text(json.dumps(state, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
     log("wrote", out / "live.json", f"flights={len(flights)} vessels={len(vessels or [])} hexes={len((live.get('gnss') or {}).get('hexes', []))} news={len(news or [])} "
-        f"events={len(live.get('events', []))} hotspots={len(live.get('hotspots') or [])} outages={len(live.get('outages') or [])} conflict={len(live.get('conflict') or [])}")
+        f"events={len(live.get('events', []))} hotspots={len(live.get('hotspots') or [])} outages={len(live.get('outages') or [])} "
+        f"hazards={len(live.get('hazards') or [])} humanitarian={len((live.get('humanitarian') or {}).get('countries', []))} navtex={len(live.get('navtex') or [])} notams={len(live.get('notams') or [])}")
     for s_ in live["sources"]:
         log(f"  {'OK ' if s_.get('ok') else '-- '} {s_['name']}: {s_['note']}")
     return 0

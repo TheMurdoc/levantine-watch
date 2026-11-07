@@ -2,3 +2,7 @@ data/
 _site/
 __pycache__/
 *.pyc
+# never commit credentials or the private ACLED build
+.env
+*.env
+private/

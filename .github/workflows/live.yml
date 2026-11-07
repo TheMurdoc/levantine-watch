@@ -1,6 +1,6 @@
 name: Live data
 
-# Collects aircraft / AIS / GNSS / headlines and redeploys the site to GitHub Pages.
+# Collects aircraft / AIS / GNSS / headlines / hazards / humanitarian context and redeploys the site to GitHub Pages.
 # Pages must be set to: Settings -> Pages -> Source: GitHub Actions
 on:
   schedule:
@@ -8,9 +8,12 @@ on:
   workflow_dispatch:          # "Run workflow" button in the Actions tab
   push:
     branches: [main]          # redeploy immediately when you push page changes
+  issues:   # NAVTEX inbox: paste a warning into an issue labelled `navtex` (only the owner's issues count, see `if:` below)
+    types: [opened, edited, closed, reopened, labeled, unlabeled]
 
 permissions:
   contents: read
+  issues: read
   pages: write
   id-token: write
 
@@ -20,6 +23,9 @@ concurrency:
 
 jobs:
   build:
+    # Anyone can open an issue on a public repo. Only the owner's `navtex` issues may start a run; otherwise a
+    # stranger could trigger extra runs and spend the paid API credits below.
+    if: github.event_name != 'issues' || (github.event.issue.user.login == github.repository_owner && contains(github.event.issue.labels.*.name, 'navtex'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -36,19 +42,28 @@ jobs:
 
       - run: pip install -r collector/requirements.txt
 
+      - name: Read NAVTEX inbox (issues labelled navtex)
+        env:
+          GH_TOKEN: ${{ github.token }}   # read-only issues access, used only in this step
+        run: gh api -X GET "repos/${{ github.repository }}/issues" -f labels=navtex -f state=all -f per_page=60 > navtex_inbox.json || echo "[]" > navtex_inbox.json
+
       - name: Collect live data
         env:
           AISSTREAM_API_KEY: ${{ secrets.AISSTREAM_API_KEY }}
           NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
           FIRMS_MAP_KEY: ${{ secrets.FIRMS_MAP_KEY }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          ACLED_EMAIL: ${{ secrets.ACLED_EMAIL }}
-          ACLED_PASSWORD: ${{ secrets.ACLED_PASSWORD }}
+          HAPI_APP_IDENTIFIER: ${{ secrets.HAPI_APP_IDENTIFIER }}
+          # ACLED is intentionally absent: ACLED data must never be published. It runs only in the private local build.
           WINGBITS_API_KEY: ${{ secrets.WINGBITS_API_KEY }}
           DATALASTIC_API_KEY: ${{ secrets.DATALASTIC_API_KEY }}
           DATADOCKED_API_KEY: ${{ secrets.DATADOCKED_API_KEY }}
           FR24_API_TOKEN: ${{ secrets.FR24_API_TOKEN }}
           FLIGHTAWARE_API_KEY: ${{ secrets.FLIGHTAWARE_API_KEY }}
+          NAVTEX_INBOX_FILE: navtex_inbox.json        # written by the step above; the collector holds no GitHub token
+          NMS_CLIENT_ID: ${{ secrets.NMS_CLIENT_ID }}           # FAA NMS-API (NOTAMs), from the FAA onboarding spreadsheet (KEY)
+          NMS_CLIENT_SECRET: ${{ secrets.NMS_CLIENT_SECRET }}   # (SECRET)
+          NMS_ENV: ${{ vars.NMS_ENV || 'prod' }}                # prod | staging | fit (repository variable)
           # paid-API caps per run (the job runs ~144 times a day)
           DATALASTIC_MAX_PER_RUN: "15"
           # Data Docked kept to the bare minimum: 1 area call + 1 vessel-details call per WEEK
@@ -62,6 +77,19 @@ jobs:
           AIS_LISTEN_SECONDS: "90"
           GNSS_WINDOW_HOURS: "6"
         run: python collector/collect.py --out _site/data
+
+      - name: Guard - no licensed private data on the public site
+        run: |
+          python - <<'PY'
+          import json, sys
+          bad = []
+          for f in ("_site/data/live.json", "_site/data/state.json"):
+              d = json.load(open(f))
+              bad += [f"{f}: {k}" for k in ("conflict", "hapi_conflict", "acled", "private") if k in d]
+          if bad:
+              sys.exit("Refusing to publish private-only data: " + ", ".join(bad))
+          print("public guard OK")
+          PY
 
       - name: Assemble site
         run: cp index.html README.md _site/ && touch _site/.nojekyll

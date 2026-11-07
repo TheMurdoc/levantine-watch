@@ -1,5 +1,8 @@
-"""Extra Levantine Watch sources: GDELT, NASA FIRMS, Cloudflare Radar, ACLED,
-Wingbits GNSS, and paid-API enrichment (Datalastic, Flightradar24, FlightAware).
+"""Extra Levantine Watch sources: GDELT, NASA FIRMS, Cloudflare Radar, GDACS, HDX HAPI,
+Wingbits GNSS, and paid-API enrichment (Datalastic, Data Docked, Flightradar24, FlightAware).
+
+ACLED is deliberately NOT here: its licence does not allow ACLED data on a public site, so it is
+fetched only by the private, local build (private/acled_private.py, outside this repository).
 
 Every function is optional (skipped without its key), fails soft, and throttles itself
 with timestamps kept in the rolling `state` so paid credits are not burned every run.
@@ -19,7 +22,6 @@ import requests
 UA = {"User-Agent": "levantine-watch/1.0 (+https://github.com/TheMurdoc/levantine-watch)"}
 LAT_MIN, LAT_MAX, LON_MIN, LON_MAX = 29.0, 37.3, 32.0, 40.2
 REGION_CC = {"CY", "LB", "SY", "IL", "PS", "JO", "EG", "TR", "IQ", "SA"}
-ACLED_COUNTRIES = ["Cyprus", "Lebanon", "Syria", "Israel", "Palestine", "Jordan", "Egypt", "Turkey"]
 
 
 def _env(name: str) -> str:
@@ -229,41 +231,171 @@ def fetch_outages(state: dict, every_s: int = 3600):
         return cache, {"name": "Cloudflare Radar", "note": f"failed: {_short(e)}" + (" (showing cached)" if cache else ""), "ok": bool(cache), "live": True}
 
 
-# ----------------------------------------------------------------------------- ACLED
-def fetch_acled(state: dict, every_s: int = 6 * 3600, days: int = 30):
-    user, pw = _env("ACLED_EMAIL"), _env("ACLED_PASSWORD")
-    if not (user and pw):
-        return None, {"name": "ACLED", "note": "not configured (ACLED_EMAIL / ACLED_PASSWORD)", "ok": False, "live": True}
-    cache = state.get("acled")
-    if cache is not None and not _due(state, "acled", every_s):
-        return cache, {"name": "ACLED", "note": f"{len(cache)} conflict events, last {days} days (cached, refreshed every {every_s // 3600} h)", "ok": True, "live": True}
+# ----------------------------------------------------------------------------- GDACS natural hazards (no key)
+# GDACS answers at most 100 records per page, newest first, for the whole world, so the region would be
+# drowned out by global green earthquakes. Querying one country at a time keeps it small. Country names must
+# match GDACS's own spelling ("Türkiye"); a name with no events answers HTTP 204.
+GDACS_COUNTRIES = ["Cyprus", "Türkiye", "Syria", "Lebanon", "Israel", "Palestine", "Jordan", "Egypt"]
+GDACS_TYPES = {"EQ": "Earthquake", "FL": "Flood", "TC": "Tropical cyclone", "VO": "Volcano", "DR": "Drought", "WF": "Wildfire"}
+# keep events near the map; large countries (Türkiye, Egypt) reach far outside it
+HZ_LAT_MIN, HZ_LAT_MAX, HZ_LON_MIN, HZ_LON_MAX = 27.5, 39.0, 29.5, 42.5
+
+
+def fetch_gdacs(state: dict, every_s: int = 3600, days: int = 30):
+    cache = state.get("gdacs")
+    if cache is not None and not _due(state, "gdacs", every_s):
+        return cache, {"name": "GDACS", "note": f"{len(cache)} hazard events near the map, last {days} days (cached, hourly refresh)", "ok": True, "live": True}
+    countries = [c.strip() for c in (_env("GDACS_COUNTRIES") or ";".join(GDACS_COUNTRIES)).split(";") if c.strip()]
+    today = datetime.now(timezone.utc).date()
+    base = {"eventlist": ";".join(GDACS_TYPES), "alertlevel": "green;orange;red",
+            "fromdate": str(today - timedelta(days=days)), "todate": str(today + timedelta(days=1))}
+    found: dict[tuple, dict] = {}
+    errs, calls = [], 0
+    for c in countries:
+        for page in (1, 2, 3):
+            try:
+                calls += 1
+                r = requests.get("https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH", headers=UA, timeout=30,
+                                 params={**base, "country": c, "pagenumber": page})
+                if r.status_code == 204:
+                    break
+                r.raise_for_status()
+                feats = (r.json() or {}).get("features") or []
+            except Exception as e:
+                errs.append(f"{c}: {_short(e)}")
+                break
+            for f in feats:
+                p, g = f.get("properties") or {}, f.get("geometry") or {}
+                try:
+                    lon, lat = float(g["coordinates"][0]), float(g["coordinates"][1])
+                except (KeyError, IndexError, TypeError, ValueError):
+                    continue
+                if not (HZ_LAT_MIN <= lat <= HZ_LAT_MAX and HZ_LON_MIN <= lon <= HZ_LON_MAX):
+                    continue
+                key = (p.get("eventtype"), p.get("eventid"))
+                if key in found and (found[key]["episode"] or 0) >= (p.get("episodeid") or 0):
+                    continue
+                sev = p.get("severitydata") or {}
+                urls = p.get("url") or {}
+                found[key] = {
+                    "lat": round(lat, 4), "lon": round(lon, 4), "type": p.get("eventtype"), "typeName": GDACS_TYPES.get(p.get("eventtype"), p.get("eventtype")),
+                    "id": p.get("eventid"), "episode": p.get("episodeid"), "name": (p.get("name") or "").strip(),
+                    "alert": (p.get("alertlevel") or "Green").capitalize(), "score": p.get("alertscore"),
+                    "sev": sev.get("severity"), "sevText": (sev.get("severitytext") or "").strip(), "sevUnit": sev.get("severityunit"),
+                    "from": p.get("fromdate"), "to": p.get("todate"), "current": str(p.get("iscurrent")).lower() == "true",
+                    "country": p.get("country"), "glide": p.get("glide") or None,
+                    "report": urls.get("report"), "details": urls.get("details"), "inMap": _in_box(lat, lon)}
+            if len(feats) < 100:
+                break
+    out = sorted(found.values(), key=lambda e: e.get("from") or "", reverse=True)
+    if errs and not out and cache is not None:
+        return cache, {"name": "GDACS", "note": f"failed: {'; '.join(errs[:3])} (showing cached)", "ok": True, "live": True}
+    state["gdacs"] = out
+    _mark(state, "gdacs")
+    n_map = sum(1 for e in out if e["inMap"])
+    note = f"{len(out)} hazard events near the map ({n_map} inside it), last {days} days, {len(countries)} countries" + (f"; failed: {'; '.join(errs[:3])}" if errs else "")
+    return out, {"name": "GDACS", "note": note, "ok": not errs or bool(out), "live": True}
+
+
+# ----------------------------------------------------------------------------- HDX HAPI humanitarian context (free app identifier)
+# Public-safe themes only. HAPI's conflict-events endpoint is ACLED data (HDX licence: "By using ACLED data you
+# agree to abide by the Terms of Use and Attribution Policy"), so it is NOT fetched here; it lives in the
+# private, local-only build (see private/README-PRIVATE.md).
+HAPI_BASE = "https://hapi.humdata.org/api/v2/"
+HAPI_COUNTRIES = {"CYP": "Cyprus", "LBN": "Lebanon", "SYR": "Syria", "PSE": "Palestine", "ISR": "Israel", "JOR": "Jordan", "TUR": "Türkiye", "EGY": "Egypt"}
+HAPI_DETAIL = ["LBN", "SYR", "PSE"]  # countries with IDP / IPC / appeal data in HAPI
+
+
+def _hapi(path: str, app_id: str, **params) -> list[dict]:
+    r = requests.get(HAPI_BASE + path, headers=UA, timeout=45,
+                     params={"app_identifier": app_id, "output_format": "json", "limit": 10000, **params})
+    r.raise_for_status()
+    return (r.json() or {}).get("data") or []
+
+
+def _latest_idps(rows: list[dict]):
+    """Latest IOM DTM figure per displacement operation, at the lowest admin level that has it."""
+    by_op: dict[str, list[dict]] = {}
+    for x in rows:
+        if x.get("population") is not None:
+            by_op.setdefault(x.get("operation") or "IDPs", []).append(x)
+    out = []
+    for op, xs in by_op.items():
+        d = max(x["reference_period_start"] for x in xs)
+        xs = [x for x in xs if x["reference_period_start"] == d]
+        lvl = min(x.get("admin_level", 0) for x in xs)
+        xs = [x for x in xs if x.get("admin_level", 0) == lvl]
+        rnd = max((x.get("reporting_round") or 0) for x in xs)
+        xs = [x for x in xs if (x.get("reporting_round") or 0) == rnd]
+        out.append({"op": op, "pop": int(sum(x["population"] for x in xs)), "date": d[:10], "round": rnd or None,
+                    "level": lvl, "type": xs[0].get("assessment_type")})
+    out.sort(key=lambda o: (o["date"], o["pop"]), reverse=True)
+    return out[:2]
+
+
+def _latest_ipc(rows: list[dict]):
+    a0 = [x for x in rows if x.get("admin_level") == 0 and x.get("ipc_phase") in ("3+", "all")]
+    if not a0:
+        return None
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    # prefer the period covering today (current or projection), else the most recent one
+    periods = sorted({(x["reference_period_start"], x["reference_period_end"], x["ipc_type"]) for x in a0})
+    covering = [p for p in periods if p[0][:10] <= today <= p[1][:10]]
+    s, e, t = (covering or periods)[-1]
+    sel = {x["ipc_phase"]: x for x in a0 if (x["reference_period_start"], x["reference_period_end"], x["ipc_type"]) == (s, e, t)}
+    p3 = sel.get("3+")
+    if not p3:
+        return None
+    return {"pop": p3.get("population_in_phase"), "pct": round(100 * (p3.get("population_fraction_in_phase") or 0)),
+            "analysed": (sel.get("all") or {}).get("population_in_phase"), "from": s[:10], "to": e[:10], "kind": t}
+
+
+def _latest_appeal(rows: list[dict]):
+    rows = [x for x in rows if x.get("requirements_usd") and x.get("appeal_code") not in (None, "Not specified")]
+    if not rows:
+        return None
+    yr = max(x["reference_period_start"][:4] for x in rows)
+    x = max((x for x in rows if x["reference_period_start"][:4] == yr), key=lambda x: x["requirements_usd"])
+    return {"name": x.get("appeal_name"), "code": x.get("appeal_code"), "type": x.get("appeal_type"), "year": yr,
+            "req": x.get("requirements_usd"), "funded": x.get("funding_usd"), "pct": x.get("funding_pct")}
+
+
+def fetch_hapi_context(state: dict, every_s: int = 12 * 3600):
+    app_id = _env("HAPI_APP_IDENTIFIER")
+    if not app_id:
+        return None, {"name": "HDX HAPI", "note": "not configured (HAPI_APP_IDENTIFIER)", "ok": False, "live": True}
+    cache = state.get("hapi_ctx")
+    if cache is not None and not _due(state, "hapi_ctx", every_s):
+        return cache, {"name": "HDX HAPI", "note": f"humanitarian context for {len(cache['countries'])} countries (cached, refreshed every {every_s // 3600} h)", "ok": True, "live": True}
+    errs = []
+    rows: dict[str, dict] = {cc: {"iso3": cc, "name": nm} for cc, nm in HAPI_COUNTRIES.items()}
     try:
-        t = requests.post("https://acleddata.com/oauth/token", headers=UA, timeout=30, data={
-            "username": user, "password": pw, "grant_type": "password", "client_id": "acled", "scope": "authenticated"})
-        t.raise_for_status()
-        tok = t.json()["access_token"]
-        end = datetime.now(timezone.utc).date()
-        start = end - timedelta(days=days)
-        q = ":OR:".join(f"country={c}" for c in ACLED_COUNTRIES)
-        url = (f"https://acleddata.com/api/acled/read?_format=json&{q}&event_date={start}|{end}&event_date_where=BETWEEN"
-               "&fields=event_id_cnty|event_date|event_type|sub_event_type|actor1|actor2|country|location|latitude|longitude|fatalities|notes|source&limit=4000")
-        r = requests.get(url, headers={**UA, "Authorization": f"Bearer {tok}"}, timeout=60)
-        r.raise_for_status()
-        rows = r.json().get("data", [])
-        out = []
-        for d in rows:
-            if not _in_box(d.get("latitude"), d.get("longitude")):
-                continue
-            out.append({"lat": round(float(d["latitude"]), 4), "lon": round(float(d["longitude"]), 4), "id": d.get("event_id_cnty"),
-                        "date": d.get("event_date"), "type": d.get("event_type"), "sub": d.get("sub_event_type"),
-                        "actor1": d.get("actor1"), "actor2": d.get("actor2"), "country": d.get("country"), "location": d.get("location"),
-                        "fatalities": int(d.get("fatalities") or 0), "notes": (d.get("notes") or "")[:300], "source": (d.get("source") or "")[:120]})
-        out.sort(key=lambda e: e["date"] or "", reverse=True)
-        state["acled"] = out
-        _mark(state, "acled")
-        return out, {"name": "ACLED", "note": f"{len(out)} conflict events, last {days} days", "ok": True, "live": True}
+        for x in _hapi("coordination-context/national-risk", app_id):
+            if x.get("location_code") in rows:
+                rows[x["location_code"]]["risk"] = {"overall": x.get("overall_risk"), "class": x.get("risk_class"), "rank": x.get("global_rank"),
+                                                     "hazard": x.get("hazard_exposure_risk"), "vuln": x.get("vulnerability_risk"),
+                                                     "coping": x.get("coping_capacity_risk"), "year": (x.get("reference_period_start") or "")[:4]}
     except Exception as e:
-        return cache, {"name": "ACLED", "note": f"failed: {_short(e)}" + (" (showing cached)" if cache else ""), "ok": bool(cache), "live": True}
+        errs.append(f"national-risk: {_short(e)}")
+    for cc in HAPI_DETAIL:
+        for path, key, fn in (("affected-people/idps", "idps", _latest_idps),
+                              ("food-security-nutrition-poverty/food-security", "ipc", _latest_ipc),
+                              ("coordination-context/funding", "appeal", _latest_appeal)):
+            try:
+                v = fn(_hapi(path, app_id, location_code=cc))
+                if v:
+                    rows[cc][key] = v
+            except Exception as e:
+                errs.append(f"{cc} {key}: {_short(e)}")
+    got = [r for r in rows.values() if len(r) > 2]
+    if not got and cache is not None:
+        return cache, {"name": "HDX HAPI", "note": f"failed: {'; '.join(errs[:3])} (showing cached)", "ok": True, "live": True}
+    res = {"updated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "countries": got,
+           "credits": "INFORM Risk (national risk), IOM DTM (IDPs), IPC (food insecurity), OCHA FTS (appeal funding), via HDX HAPI"}
+    state["hapi_ctx"] = res
+    _mark(state, "hapi_ctx")
+    note = f"humanitarian context for {len(got)} countries (INFORM risk, IOM DTM IDPs, IPC, OCHA FTS)" + (f"; failed: {'; '.join(errs[:3])}" if errs else "")
+    return res, {"name": "HDX HAPI", "note": note, "ok": bool(got), "live": True}
 
 
 # ----------------------------------------------------------------------------- Wingbits GNSS
