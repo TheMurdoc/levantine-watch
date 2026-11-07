@@ -457,7 +457,7 @@ a.tbtn{text-decoration:none;font-size:9.5px;letter-spacing:.04em}
 
   <section class="card" id="card-navtex" hidden>
     <h2>Maritime warnings <span class="n" id="nv-n"></span></h2>
-    <p class="note">NAVTEX / NAVAREA III notices fed in through the repository inbox: cable routes, survey areas, firing and exercise zones. Click a row to fly to it. Shaded band = the clearance the notice asks vessels to keep. These are copies of broadcast text, not an official feed: check the issuing authority before relying on one.</p>
+    <p class="note">NAVTEX / NAVAREA III notices from the SeaLagom warning feed (Cyprus, Antalya, Izmir, Hellenic coastal stations and NAVAREA III) and from the repository inbox: cable routes, survey areas, firing and exercise zones. Click a row to fly to it. Shaded band = the clearance the notice asks vessels to keep. Positions are parsed from the broadcast text by this page's collector, not taken from an official chart feed: check the issuing authority before relying on one.</p>
     <div id="nv-list" class="newswrap"></div>
   </section>
 
@@ -1601,12 +1601,14 @@ const dm = (lat, lon) => {
 const nvColor = m => { const t = m.tags || []; return t.includes('firing') ? '#ff5d5d' : t.includes('exercise') ? '#ff8a5d' : t.includes('drilling') ? '#c9a0ff' : '#ffb84d'; };
 const nvSame = (w, v) => !!((w.mmsi && v.mmsi && String(w.mmsi) === String(v.mmsi)) || (w.imo && v.imo && String(w.imo) === String(v.imo)) || (w.name && v.name && (w.name.toUpperCase() === v.name.toUpperCase() || (w.name.length >= 8 && v.name.toUpperCase().includes(w.name.toUpperCase())))));
 (function () {
-  const inbox = data.sources.find(s => s.name === 'NAVTEX inbox');
-  if (!data.navtex.length && (!inbox || /not configured/.test(inbox.note))) return;
+  const inbox = data.sources.find(s => s.name === 'NAVTEX inbox'), sealagom = data.sources.find(s => s.name === 'SeaLagom');
+  const off = s => !s || /not configured/.test(s.note);
+  if (!data.navtex.length && off(inbox) && off(sealagom)) return;
   const gN = document.getElementById('layer-navtex'), card = document.getElementById('card-navtex'), list = document.getElementById('nv-list');
   card.hidden = false;
-  document.getElementById('nv-n').textContent = `${data.navtex.length} active`;
-  if (!data.navtex.length) list.appendChild(h('div', 'note', 'No active warnings in the inbox. Paste a NAVTEX message into a GitHub issue labelled navtex to add one.'));
+  const nUp = data.navtex.filter(m => m.upcoming).length;
+  document.getElementById('nv-n').textContent = `${data.navtex.length - nUp} active` + (nUp ? ` · ${nUp} upcoming` : '');
+  if (!data.navtex.length) list.appendChild(h('div', 'note', off(sealagom) ? 'No active warnings in the inbox. Paste a NAVTEX message into a GitHub issue labelled navtex to add one, or add a SeaLagom key for the live feed.' : 'No warnings in force in the region right now' + (sealagom && !sealagom.ok ? ' (the SeaLagom feed did not answer: ' + sealagom.note + ')' : '') + '.'));
   data.navtex.forEach(m => {
     const pts = (m.points || []).map(([la, lo]) => ({la, lo, x: xOf(lo), y: yOf(la)}));
     const col = nvColor(m), g = el('g', {class: 'nv nv-' + (m.geom || 'text')});
@@ -1617,7 +1619,7 @@ const nvSame = (w, v) => !!((w.mmsi && v.mmsi && String(w.mmsi) === String(v.mms
     const first = pts[0] || {x: 0, y: 0};
     const lines = [
       [m.station, m.header && `(${m.header})`, m.subject].filter(Boolean).join(' · '),
-      `valid ${m.valid_from ? utc(m.valid_from) : '—'} → ${m.valid_to ? utc(m.valid_to) : 'until cancelled'}`,
+      `${m.upcoming ? 'upcoming · starts' : 'valid'} ${m.valid_from ? utc(m.valid_from) : '—'} → ${m.valid_to ? utc(m.valid_to) : 'until cancelled'}`,
       (m.tags && m.tags.length) ? 'tags: ' + m.tags.join(', ') : null,
       pts.length ? (m.geom === 'polygon' ? `${pts.length - 1} corner points · first ${dm(pts[0].la, pts[0].lo)}` : m.geom === 'point' ? `position ${dm(pts[0].la, pts[0].lo)}` : m.geom === 'points' ? `${pts.length} separate positions · first ${dm(pts[0].la, pts[0].lo)}` : `${pts.length} waypoints · from ${dm(pts[0].la, pts[0].lo)} to ${dm(pts[pts.length - 1].la, pts[pts.length - 1].lo)}`) : 'no coordinates in the text',
       m.clearance_nm ? `vessels asked to keep ${m.clearance_nm} NM clear (shaded band)` : null,
@@ -1626,12 +1628,14 @@ const nvSame = (w, v) => !!((w.mmsi && v.mmsi && String(w.mmsi) === String(v.mms
       m.text ? m.text.replace(/\s+/g, ' ').slice(0, 260) + (m.text.length > 260 ? '…' : '') : null,
     ].filter(Boolean);
     const links = [];
-    if (m.url) links.push(lk('Source (inbox)', m.url, true));
+    const fromFeed = /^SeaLagom/.test(m.source || '');
+    if (m.url) links.push(lk(fromFeed ? 'SeaLagom message' : 'Source (inbox)', m.url, true));
     if (pts.length) links.push(Object.assign(LINK.osm(first.x, first.y, 8, !m.url, 'OpenStreetMap at first point'), {}));
     vess.forEach(w => vesselLinks({name: w.name, mmsi: w.mmsi, imo: w.imo, x: first.x, y: first.y}).slice(0, 3).forEach(l => links.push(Object.assign({}, l, {primary: false, label: `${w.name} · ${l.label}`}))));
     if (m.geom === 'line' && (m.tags || []).includes('cable')) links.push(lk('Submarine Cable Map', 'https://www.submarinecablemap.com/', false));
     const item = {marker: g, kind: 'Maritime warning · ' + (m.station || 'NAVTEX') + ((m.tags || []).length ? ' · ' + m.tags.join(' / ') : ''), title, lines, links,
-      source: `NAVTEX inbox · ${m.source || 'owner-supplied text'}`, note: 'Copy of a broadcast warning typed or pasted in by the repository owner; check it against the issuing station before relying on it. The shaded band is drawn in map pixels, so its width is approximate.'};
+      source: fromFeed ? m.source : `NAVTEX inbox · ${m.source || 'owner-supplied text'}`,
+      note: (fromFeed ? 'Broadcast text relayed by SeaLagom from the issuing station; the positions were parsed from that text by this dashboard, not supplied as chart data. ' : 'Copy of a broadcast warning typed or pasted in by the repository owner; ') + 'Check it against the issuing station before relying on it. The shaded band is drawn in map pixels, so its width is approximate.'};
     if (pts.length) {
       const d = 'M ' + pts.map(p => p.x.toFixed(1) + ',' + p.y.toFixed(1)).join(' L ') + (m.geom === 'polygon' ? ' Z' : '');
       if (m.geom === 'polygon') g.appendChild(el('path', {class: 'nv-poly', d}));
@@ -1657,7 +1661,7 @@ const nvSame = (w, v) => !!((w.mmsi && v.mmsi && String(w.mmsi) === String(v.mms
     row.appendChild(h('b', null, title)); row.appendChild(h('span', 'tag', 'active'));
     row.appendChild(h('div', null, [m.station, m.subject].filter(Boolean).join(' · ')));
     if ((m.tags || []).length || vess.length) row.appendChild(h('span', 'nvv', [...(m.tags || []), ...vess.map(w => w.name)].join(' · ')));
-    row.appendChild(h('span', 'when', `${m.valid_from ? utc(m.valid_from) : '—'} → ${m.valid_to ? utc(m.valid_to) : 'until cancelled'}`));
+    row.appendChild(h('span', 'when', `${m.upcoming ? 'from ' : ''}${m.valid_from ? utc(m.valid_from) : '—'} → ${m.valid_to ? utc(m.valid_to) : 'until cancelled'}`));
     if (pts.length) {
       const go = h('button', 'go', 'show on map'); go.type = 'button';
       go.addEventListener('click', e => { e.stopPropagation(); fitBox(Math.min(...pts.map(p => p.x)), Math.min(...pts.map(p => p.y)), Math.max(...pts.map(p => p.x)), Math.max(...pts.map(p => p.y))); select(item); });

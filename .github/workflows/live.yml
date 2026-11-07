@@ -61,6 +61,7 @@ jobs:
           FR24_API_TOKEN: ${{ secrets.FR24_API_TOKEN }}
           FLIGHTAWARE_API_KEY: ${{ secrets.FLIGHTAWARE_API_KEY }}
           NAVTEX_INBOX_FILE: navtex_inbox.json        # written by the step above; the collector holds no GitHub token
+          SEALAGOM_API_TOKEN: ${{ secrets.SEALAGOM_API_TOKEN }}   # SeaLagom NAVAREA / coastal warning texts (free developer key)
           NMS_CLIENT_ID: ${{ secrets.NMS_CLIENT_ID }}           # FAA NMS-API (NOTAMs), from the FAA onboarding spreadsheet (KEY)
           NMS_CLIENT_SECRET: ${{ secrets.NMS_CLIENT_SECRET }}   # (SECRET)
           NMS_ENV: ${{ vars.NMS_ENV || 'prod' }}                # prod | staging | fit (repository variable)

@@ -17,6 +17,7 @@ Environment
   HAPI_APP_IDENTIFIER HDX HAPI app identifier (humanitarian context); GDACS needs no key
   NMS_CLIENT_ID / NMS_CLIENT_SECRET / NMS_ENV   FAA NMS-API (airspace NOTAMs), see collector/nms.py
   NAVTEX_INBOX_FILE   NAVTEX inbox issues fetched by the workflow, see collector/navtex.py
+  SEALAGOM_API_TOKEN  SeaLagom warnings feed (NAVAREA / coastal / NAVTEX text), see collector/navtex.py
   (see README.md for the other optional keys)
 
 ACLED is never collected here. This script feeds the PUBLIC site; ACLED data is licensed for
@@ -453,7 +454,7 @@ def main() -> int:
             data_, st_ = None, {"name": key, "note": f"failed: {e}", "ok": False, "live": True}
         if data_ is not None:
             live[key] = data_
-        live["sources"].append(st_)
+        live["sources"].extend(st_ if isinstance(st_, list) else [st_])
 
     state["updated"] = iso(t_now)
     scrub_private(live, state)

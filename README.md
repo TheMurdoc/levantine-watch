@@ -17,7 +17,7 @@ Near-live open-source intelligence dashboard for Cyprus, the Levant and the East
 | Wi-Fi access points | WiGLE (names withheld) | WiGLE map | OSM, Google satellite |
 | Places | TomTom / Mapbox Search | OpenStreetMap | Google Maps, Apple Maps |
 | Natural hazards (live) | GDACS | GDACS event report | EMSC, USGS, NASA FIRMS (wildfires), Copernicus EMS |
-| NAVTEX / navigational warnings | Repository inbox (issues labelled `navtex`) | Source link in the message, if any | OSM at the first point, VesselFinder for named survey ships |
+| NAVTEX / navigational warnings | SeaLagom warning feed (Cyprus, Antalya, Izmir and Hellenic coastal stations, NAVAREA III) and the repository inbox (issues labelled `navtex`) | The SeaLagom message page, or the source link in a pasted message | OSM at the first point, VesselFinder / MarineTraffic for named survey and cable ships |
 | Airspace NOTAMs (restricted / danger areas, firing, exercises, GNSS, drones) | FAA NOTAM Management Service (NMS-API) | FAA NOTAM Search | OSM at the centre, GPSJam for GNSS NOTAMs |
 | Anything on Cyprus, or any point clicked on the island | Department of Lands and Surveys (DLS), live | DLS parcel / topographic / marine map at that spot | DLS cadastral portal, Company registry (DRCOR), CyLaw, CYTA Yellow Pages |
 
@@ -40,20 +40,30 @@ A scheduled GitHub Actions job (`.github/workflows/live.yml`) runs `collector/co
 | Internet outages | Cloudflare Radar outage annotations, 14 days | `CLOUDFLARE_API_TOKEN` | hourly |
 | Natural hazards | GDACS (earthquakes, floods, wildfires, cyclones, volcanoes, droughts), last 30 days, per country: Cyprus, Türkiye, Syria, Lebanon, Israel, Palestine, Jordan, Egypt | none | hourly, about 8 requests |
 | Humanitarian context | HDX HAPI: INFORM national risk, IOM DTM displacement, IPC food insecurity, OCHA FTS appeal funding | `HAPI_APP_IDENTIFIER` | every 12 h, 10 requests |
-| NAVTEX warnings | Your own issues labelled `navtex` (or `navtex/*.txt` files), parsed for number, validity, coordinates and area / route / positions | none (the workflow reads the issues with its own token) | every run, and immediately when you open, edit, label or close a `navtex` issue |
+| NAVTEX warnings (feed) | SeaLagom `GET /api/v2/messages/`: every warning in force whose position falls in the map box (Crete to the Levant), text only; number, validity, coordinates and shape are parsed here with the same parser as the inbox | `SEALAGOM_API_TOKEN` | every 2 h (`SEALAGOM_EVERY_MIN`), up to 4 calls per pull (`SEALAGOM_MAX_PAGES`); a free developer key allows about 100 calls a day |
+| NAVTEX warnings (inbox) | Your own issues labelled `navtex` (or `navtex/*.txt` files), parsed for number, validity, coordinates and area / route / positions | none (the workflow reads the issues with its own token) | every run, and immediately when you open, edit, label or close a `navtex` issue |
 | Airspace NOTAMs | FAA NMS-API `/nmsapi/v1/notams` for LCCC, LCLK, LCPH, LCRA, LLLL, OLBB, OSTT, OJAC, LTAA, LTAI, HECC, LGGG, LGIR plus three radius searches | `NMS_CLIENT_ID`, `NMS_CLIENT_SECRET` (+ variable `NMS_ENV`) | every 30 min (`NMS_EVERY_MIN`), about 17 requests; the access token is fetched each time and never stored |
 
 Caps can be changed in the workflow (`FR24_MAX_PER_RUN`, `FLIGHTAWARE_MAX_PER_RUN`, `DATALASTIC_MAX_PER_RUN`, `DATADOCKED_MAX_PER_RUN`). Infrastructure, places, cell and Wi-Fi layers stay a static snapshot. The page checks for new data every minute and reloads itself, keeping your map view (if a panel is open it shows **New data · click to refresh** instead).
 
-**Licensing:** the site and `data/live.json` are public. Paid feeds (Flightradar24, FlightAware, Datalastic, Data Docked, Wingbits) have terms on redistribution and attribution; check your plan allows public display before enabling them. GDACS asks for attribution only. HDX HAPI datasets keep their own licences and are credited on the page. The FAA NMS-API is available on request and its onboarding terms were not public when this was written: read the terms you receive before turning it on for this public site. NOTAMs are operational notices, not a navigation source.
+**Licensing:** the site and `data/live.json` are public. Paid feeds (Flightradar24, FlightAware, Datalastic, Data Docked, Wingbits) have terms on redistribution and attribution; check your plan allows public display before enabling them. SeaLagom relays public broadcast text; the page links every warning back to its SeaLagom page and names the issuing station. Read the SeaLagom API terms for your plan before enabling it on a public site. GDACS asks for attribution only. HDX HAPI datasets keep their own licences and are credited on the page. The FAA NMS-API is available on request and its onboarding terms were not public when this was written: read the terms you receive before turning it on for this public site. NOTAMs are operational notices, not a navigation source.
 
 **ACLED is not used on this public site.** Its licence does not allow ACLED data (including the ACLED-derived HDX HAPI `conflict-events` endpoint) to be published or made available through a dashboard. The collector never calls ACLED, ignores ACLED credentials if they are set, and the workflow refuses to deploy if `live.json` or `state.json` ever contains conflict data.
 
 ### One-time setup
 1. **Settings → Pages → Build and deployment → Source: GitHub Actions**.
-2. **Settings → Secrets and variables → Actions → New repository secret** for each key you have (names above). Get `HAPI_APP_IDENTIFIER` free from the Utility section of https://hapi.humdata.org/docs. Do not add ACLED secrets here.
+2. **Settings → Secrets and variables → Actions → New repository secret** for each key you have (names above). Get `HAPI_APP_IDENTIFIER` free from the Utility section of https://hapi.humdata.org/docs, and `SEALAGOM_API_TOKEN` from your SeaLagom account (API → tokens). Do not add ACLED secrets here.
 3. Optional: **Issues → Labels → New label** `navtex` for the NAVTEX inbox, and the FAA NMS secrets `NMS_CLIENT_ID` / `NMS_CLIENT_SECRET` plus a repository **variable** `NMS_ENV` (see Airspace NOTAMs below).
 4. **Actions → Live data → Run workflow** for the first run; the "Collect live data" log lists every source as `OK` or `--` with the reason.
+
+### Adding or rotating a secret without pasting it anywhere
+
+A repository secret is encrypted by GitHub when you save it and is only ever decrypted inside the Actions runner. Nothing in this repository, in `data/`, in the page or in the Actions log contains it (the collector prints source names and counts, never credentials).
+
+- **Browser:** Settings → Secrets and variables → Actions → *New repository secret* (or the pencil next to an existing name to replace its value). Paste the value straight from the provider's page into the GitHub form. The names the collector expects are in the table above; a wrong name is simply "not configured".
+- **Terminal, from a file:** with the GitHub CLI installed and logged in (`gh auth login`), `gh secret set WINGBITS_API_KEY < wingbits.key` reads the value from a file, so it never appears in your shell history or on screen. `gh secret set NMS_CLIENT_SECRET` with no redirect prompts for it invisibly.
+- **FAA NMS:** the `-u <CLIENT_ID>:<CLIENT_SECRET>` pair from the FAA's curl examples is HTTP basic authentication, which the collector sends from the two secrets (`collector/nms.py` posts `grant_type=client_credentials` with `auth=(NMS_CLIENT_ID, NMS_CLIENT_SECRET)`). The bearer token it receives lives about 30 minutes, is used for that run's requests and is never written to `state.json`.
+- Keep local copies in a `.env` file that is listed in `.gitignore` (this repository ignores `.env` and `*.env`). Never paste a key into a chat, an issue or a commit message; if one has been, rotate it at the provider and replace the secret.
 
 Notes: scheduled runs can start late and GitHub pauses schedules after 60 days without repository activity (re-enable in the Actions tab). The ADS-B APIs are free for non-commercial use and rate-limited. Run locally with `pip install -r collector/requirements.txt && python collector/collect.py --out data`, then serve the folder (`python -m http.server`).
 
@@ -74,9 +84,17 @@ Nothing from these registries is stored in this repository or in `data/`; the br
 
 The map now reaches west to Crete so the Great Sea Interconnector (Crete–Cyprus cable) survey area fits. The **GSI** map button (or `G`) frames the corridor: every mapped cable or survey warning, widened to take in western Cyprus. AIS listens to that corridor as well, so survey and support ships show up there. The survey ships the collector watches for are in `WATCH_VESSELS` in `collector/navtex.py`; only *Abeille Marengo* (MMSI 228505700, IMO 9388613, AIS name "VB ABEILLE MARENGO") has been checked against public vessel registers, so verify the others before relying on them.
 
+## Warning feed (SeaLagom)
+
+[SeaLagom](https://www.sealagom.com) collects NAVAREA and coastal / NAVTEX broadcasts worldwide and offers them through an API. With `SEALAGOM_API_TOKEN` set, the collector asks every two hours for the warnings in force whose position falls inside the map box, from Crete to the Levant (`bbox=23,29,40.2,37.3`, overridable with `SEALAGOM_BBOX`). Only the warning text is used: SeaLagom's own parsed positions and analysis are paid features, and the dashboard's parser reads the coordinates, validity, vessel names, MMSI / IMO numbers and shape from the text exactly as it does for pasted messages. Turkish broadcasts (Antalya, Izmir: `K`/`D` for north/east) and the English translations SeaLagom provides are both understood; a warning whose text cannot be parsed is still listed, without a shape.
+
+What this adds for the GSI cable corridor: the Cyprus (JRCC Larnaca), Antalya and Hellenic stations are the ones that announce survey and cable-laying areas there, so the *Abeille Marengo* GSI survey polygon, the Cyprus–Lebanon cable route and similar notices appear on the map within two hours of broadcast, with a link to the SeaLagom page and, when the ship is in the AIS feed, a ring around it.
+
+Numbers are prefixed with the station (`ANTALYA NAVTEX 1111/26`, `HELLENIC NAVWARN 1343/26`) because stations reuse the same sequence; Cyprus warnings keep the plain `NAVWARN 345/26` form, so a warning you also paste into the inbox is recognised as the same one. Warnings whose validity starts within 14 days (`NAVTEX_UPCOMING_DAYS`) are kept and marked *upcoming*. The free developer key allows about 100 calls a day; one pull is one to four calls, so the default cadence uses under half of it. 401 / 403 / 429 answers are reported under Data provenance and the last good pull stays on the map.
+
 ## NAVTEX inbox
 
-There is no open API for the Irakleio, Antalya or Cyprus NAVTEX stations, but the warning text is public. To put one on the map:
+There is no open API for the Irakleio, Antalya or Cyprus NAVTEX stations, but the warning text is public. SeaLagom (above) relays it; the inbox is for anything it misses or for a message you receive first. To put one on the map:
 
 1. Open an issue in this repository with the label `navtex` and paste the full message (header, number, times, coordinates) as the body. Several messages can go in one issue.
 2. The workflow runs straight away and the warning appears as an area, route or set of positions, with its validity, station and any named vessel.
@@ -102,6 +120,8 @@ Setup:
 3. Once production access is granted, change `NMS_ENV` to `prod`. Staging is the FAA test system: on 7 Nov 2026 it returned current Nicosia FIR NOTAMs, but it is not guaranteed to match production, and the page says which environment the data came from.
 
 Optional settings: `NMS_LOCATIONS` (comma list of FIR / aerodrome codes), `NMS_GEO` (`lat,lon,radius;…` with the radius in NM, or `off`), `NMS_SUBJECTS` (Q-code subject letters, `*` for all), `NMS_FORMAT` (`AIXM`, the default, or `GEOJSON`), `NMS_EVERY_MIN` (default 30).
+
+**How fresh the NOTAMs are when you open the page.** The page is static: it cannot call the NMS-API itself, because the client secret would then be visible to every visitor and the API does not allow browser (CORS) requests. Instead the collector fetches a token and the NOTAMs on GitHub's runner every `NMS_EVERY_MIN` minutes (the job itself runs every ~10 minutes), and the page downloads the latest `data/live.json` every time it is opened and checks for a newer one every minute while it stays open. So on launch the NOTAM layer is at most about 30 to 40 minutes behind the FAA, and it keeps updating without a reload. The **NOTAMs** chip in the layer bar toggles the layer; the *Airspace NOTAMs* card shows the count, the FAA environment the data came from and filter chips per category. To refresh more often, lower `NMS_EVERY_MIN` in `.github/workflows/live.yml` (each refresh is about 17 requests; check your FAA quota first).
 
 Checked against a real staging answer (a 100 NM search off Paphos, 115 NOTAMs): the collector asks for AIXM, which comes back as a list of AIXM 5.1 messages, and the search radius is in NM. A trimmed copy is the test fixture `collector/tests/nms_aixm_lccc_sample.json`. Still unverified: the GeoJSON layout, paging of very long answers, and the production token URL (assumed to be `https://api-nms.aim.faa.gov/v1/auth/token`, matching the staging pattern). Check the **FAA NMS NOTAMs** line under Data provenance (or the "Collect live data" log): it reports how many NOTAMs were kept per category, which locations returned nothing and any errors.
 
