@@ -356,7 +356,7 @@ def _sealagom_pull(token: str, errs: list) -> tuple[list[dict], int]:
     for page in range(1, pages + 1):
         calls += 1
         r = requests.get(f"{SEALAGOM}/api/v2/messages/", headers=hdr, params={**params, "page": page}, timeout=60)
-        if r.status_code in (401, 403, 429):
+        if r.status_code in (401, 402, 403, 429):  # 402 = free allowance used up (SeaLagom)
             detail = ""
             if r.headers.get("content-type", "").startswith("application/json"):
                 detail = (r.json() or {}).get("detail") or ""
