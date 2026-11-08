@@ -42,6 +42,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import extra  # noqa: E402
 import navtex  # noqa: E402
 import nms  # noqa: E402
+import spoof  # noqa: E402
 
 # Map extent of the dashboard (matches the page's linear lat/lon grid).
 LAT_MIN, LAT_MAX = 29.0, 37.3
@@ -460,6 +461,21 @@ def main() -> int:
     live["sources"].append(st)
     if wst:
         live["sources"].append(wst)
+    if raw and os.environ.get("SPOOF_INDICATORS", "1") != "0":
+        try:
+            net2, raw2, err2 = spoof.fetch_second_network(live["sources"][0]["name"], AIR_PROVIDERS, AIR_POINTS, AIR_RADIUS_NM, UA, in_air_box)
+            flagged = spoof.analyse(raw, raw2)
+            live["spoof"], sst = spoof.update(state, flagged, window_h, t_now, net2)
+            if err2:
+                sst["note"] += f" ({err2})"
+            marks = {f["hex"]: f for f in flagged}
+            for fl in flights:
+                if fl.get("hex") in marks:
+                    m = marks[fl["hex"]]
+                    fl["spoof"] = {k: m[k] for k in ("methods", "offset_km", "alt_diff") if m.get(k) is not None}
+        except Exception as e:
+            sst = {"name": "GNSS spoofing indicators", "note": f"failed: {e.__class__.__name__}: {str(e)[:100]}", "ok": False, "live": True}
+        live["sources"].append(sst)
     for s_ in extra.enrich_flights(flights, state):
         live["sources"].append(s_)
 

@@ -145,6 +145,7 @@ button{font:inherit}
 .otoast.on{opacity:1}
 a.tbtn{text-decoration:none;font-size:9.5px;letter-spacing:.04em}
 .hex{stroke:#081521;stroke-width:.4}
+.spoof{cursor:pointer}.spoof-outline{fill:rgba(199,125,255,.10);stroke:#c77dff;stroke-width:1;stroke-dasharray:3 2;vector-effect:non-scaling-stroke}.spoof-ring{fill:none;stroke:#c77dff;vector-effect:non-scaling-stroke}.spoof:hover .spoof-outline{fill:rgba(199,125,255,.22)}
 .hex:hover{stroke:var(--ink);stroke-width:1}
 .marker{cursor:pointer}
 .m-place circle{fill:var(--c-places);opacity:.75}
@@ -392,6 +393,7 @@ a.tbtn{text-decoration:none;font-size:9.5px;letter-spacing:.04em}
         <g id="layer-land"></g>
         <g id="layer-dls"></g>
         <g id="layer-hex"></g>
+        <g id="layer-spoof"></g>
         <g id="layer-labels"></g>
         <g id="layer-infra"></g>
         <g id="layer-cells"></g>
@@ -593,9 +595,14 @@ async function lwMergeLive(data) {
   if (Array.isArray(j.flights)) { data.flights = j.flights.map(put); got.flights = true; }
   if (Array.isArray(j.vessels) && j.vessels.length) { data.vessels = j.vessels.map(put); got.vessels = true; }
   if (j.gnss && Array.isArray(j.gnss.hexes) && j.gnss.hexes.length) {
-    data.hexes = j.gnss.hexes.map(h => ({d: 'M ' + h.b.map(([la, lo]) => X(lo).toFixed(1) + ',' + Y(la).toFixed(1)).join(' L ') + ' Z', np: h.np, samples: h.samples, aircraft: h.aircraft, sev: h.sev, mlat_h: h.mlat_h, adsb_np: h.adsb_np, day_np: h.day_np, ah: h.ah, x_np: h.x_np, x_ac: h.x_ac}));
+    data.hexes = j.gnss.hexes.map(h => ({d: 'M ' + h.b.map(([la, lo]) => X(lo).toFixed(1) + ',' + Y(la).toFixed(1)).join(' L ') + ' Z', h3: h.h3, np: h.np, samples: h.samples, aircraft: h.aircraft, sev: h.sev, mlat_h: h.mlat_h, adsb_np: h.adsb_np, day_np: h.day_np, ah: h.ah, x_np: h.x_np, x_ac: h.x_ac}));
     data.hex_updated = j.gnss.updated.replace('T', ' ').replace('Z', '');
     got.gnss = j.gnss.window_h;
+  }
+  if (j.spoof && Array.isArray(j.spoof.hexes)) {
+    data.spoof = j.spoof.hexes.map(h => ({...h, d: 'M ' + h.b.map(([la, lo]) => X(lo).toFixed(1) + ',' + Y(la).toFixed(1)).join(' L ') + ' Z'}));
+    data.spoof_updated = j.spoof.updated.replace('T', ' ').replace('Z', '');
+    data.spoof_window = j.spoof.window_h;
   }
   if (Array.isArray(j.news) && j.news.length) { data.news = j.news; got.news = true; }
   for (const k of ['events', 'hotspots', 'conflict', 'hazards']) if (Array.isArray(j[k])) { data[k] = j[k].map(put); got[k] = true; }
@@ -881,6 +888,27 @@ data.hexes.forEach(x => {
 });
 document.getElementById('hex-degraded-n').textContent = degraded + ' degraded (severity > 0.5)';
 
+/* ---------- GNSS spoofing indicators (own, from free ADS-B networks; see collector/spoof.py) ---------- */
+const SPOOF_M = {alt: 'GNSS vs baro altitude', xnet: 'networks disagree on position', mlat: 'ADS-B position unusable, MLAT only', cluster: 'shared spoof point'};
+data.spoof = data.spoof || [];
+const gSpoof = document.getElementById('layer-spoof');
+data.spoof.forEach(x => {
+  const c = hexCentroid(x.d), step = x.n >= 10 ? 3 : x.n >= 4 ? 2 : 1;
+  const g = el('g', {class: 'spoof'});
+  g.appendChild(el('path', {class: 'spoof-outline', d: x.d}));
+  g.appendChild(el('circle', {class: 'spoof-ring', cx: c.x, cy: c.y, r: [0, 3.2, 4.6, 6][step], 'stroke-width': [0, 1.2, 1.6, 2.1][step]}));
+  const how = Object.entries(x.m).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${n} ${SPOOF_M[k] || k}`);
+  const nacp = data.hexes.find(hx => hx.h3 && hx.h3 === x.h3);
+  bindTip(g, `Spoofing indicators · ${x.n} aircraft`, how.join(' · '));
+  g.addEventListener('click', e => { e.stopPropagation(); select({marker: g, kind: 'GNSS spoofing indicators · free ADS-B networks', title: `${x.n} aircraft flagged · ${coord(c.lat, c.lon)}`,
+    lines: [...how, ...(x.off_km ? [`median cross-network offset ${x.off_km} km`] : []), ...(x.alt_ft ? [`median GNSS-baro altitude gap ${fmt(x.alt_ft)} ft`] : []),
+      nacp ? `same hexagon on the GNSS grid: NACp ${nacp.np} from ${nacp.aircraft} aircraft` : 'no GNSS-grid reading for this hexagon',
+      `rolling ${data.spoof_window} h window · ${data.spoof_updated.slice(0, 16)} UTC`],
+    links: [LINK.gpsjam(c.x, c.y, true), lk('Wingbits GPS jamming map (spoofing layer)', 'https://wingbits.com/gps-jamming'), LINK.osm(c.x, c.y, 9)],
+    source: 'Own indicators from airplanes.live / adsb.lol / adsb.fi', note: 'Marks show where affected aircraft were, not where the interference comes from. Hexagons need 2+ distinct aircraft.'}); });
+  gSpoof.appendChild(g);
+});
+
 /* histogram of severity bins */
 const bins = [0, .2, .4, .6, .8, 1.0001];
 const counts = bins.slice(0, -1).map((lo, i) => data.hexes.filter(x => x.sev >= lo && x.sev < bins[i + 1]).length);
@@ -1138,7 +1166,7 @@ const routeLine = f => f.route ? `${f.route.orig_city ? f.route.orig_city + ' ' 
 data.flights.forEach((f, i) => {
   const c = f._c;
   const g = marker('layer-flights-' + c.cls, 'm-flight' + (c.mil ? ' mil' : ''), f.x, f.y, aircraftGlyph(c, f.trk), f.callsign || f.reg || 'unknown', `${c.label}${c.mil ? ' · military / state' : ''} · ${f.type || '—'}${f.route ? ' · ' + routeTxt(f) : ''} · ${fmt(f.alt)} ft · ${fmt(f.spd)} kt · heading ${f.trk == null ? '—' : f.trk + '°'}`, () => select(items.flight[i]));
-  items.flight[i] = {marker: g, kind: 'Aircraft · ' + c.label + (c.mil ? ' · military' : '') + ' · ' + (f.type || 'type unknown'), title: (f.callsign || 'no callsign') + (f.reg ? ' · ' + f.reg : ''), lines: [`${f.gnd ? 'on ground' : fmt(f.alt) + ' ft'} · ${fmt(f.spd)} kt · heading ${f.trk == null ? '—' : f.trk + '°'}${f.sq ? ' · squawk ' + f.sq : ''}`, routeLine(f), [f.hex ? 'ICAO ' + f.hex.toUpperCase() : null, f.nacp != null ? 'NACp ' + f.nacp : null, coord(latOf(f.y), lonOf(f.x))].filter(Boolean).join(' · ')].filter(Boolean), links: flightLinks(f).concat([LINK.osm(f.x, f.y, 9)]), source: f.src || 'FlightRadar24 positions', note: 'Flightradar24 opens the live flight if still airborne, otherwise its latest history.'};
+  items.flight[i] = {marker: g, kind: 'Aircraft · ' + c.label + (c.mil ? ' · military' : '') + ' · ' + (f.type || 'type unknown'), title: (f.callsign || 'no callsign') + (f.reg ? ' · ' + f.reg : ''), lines: [`${f.gnd ? 'on ground' : fmt(f.alt) + ' ft'} · ${fmt(f.spd)} kt · heading ${f.trk == null ? '—' : f.trk + '°'}${f.sq ? ' · squawk ' + f.sq : ''}`, routeLine(f), [f.hex ? 'ICAO ' + f.hex.toUpperCase() : null, f.nacp != null ? 'NACp ' + f.nacp : null, coord(latOf(f.y), lonOf(f.x))].filter(Boolean).join(' · '), f.spoof ? 'Spoofing indicator: ' + f.spoof.methods.map(k => SPOOF_M[k] || k).join(', ') + (f.spoof.alt_diff ? ` (GNSS ${f.spoof.alt_diff > 0 ? '+' : ''}${fmt(f.spoof.alt_diff)} ft vs baro)` : '') + (f.spoof.offset_km ? ` (${f.spoof.offset_km} km between networks)` : '') : null].filter(Boolean), links: flightLinks(f).concat([LINK.osm(f.x, f.y, 9)]), source: f.src || 'FlightRadar24 positions', note: 'Flightradar24 opens the live flight if still airborne, otherwise its latest history.'};
 });
 
 /* ---------- events, hotspots, conflict, outages (live collector) ---------- */
@@ -1692,6 +1720,7 @@ const layers = [
   {key: 'flights',   label: 'Flights',        node: 'layer-flights',   color: 'var(--c-flights)',   count: data.flights.length,   shape: 'arrow', sub: `${data.flights.filter(f => f._c.mil).length} military · ${new Set(data.flights.map(f => f._c.cls)).size} classes`},
   {key: 'vessels',   label: 'Vessels',        node: 'layer-vessels',   color: 'var(--c-vessels)',   count: data.vessels.length,   shape: 'chevron', sub: `${data.vessels.filter(v => v._c.naval).length} naval · ${new Set(data.vessels.map(v => v._c.t)).size} classes`},
   {key: 'hex',       label: 'GNSS hexes',     node: 'layer-hex',       color: 'var(--heat-1)',      count: data.hexes.length,     shape: 'hex', sub: `${degraded} degraded`},
+  ...(data.spoof_updated ? [{key: 'spoof', label: 'Spoofing', node: 'layer-spoof', color: '#c77dff', count: data.spoof.length, shape: 'ring', sub: `${data.spoof.reduce((a, x) => a + x.n, 0)} aircraft · ${data.spoof_window} h`}] : []),
   ...(data.events.length ? [{key: 'events', label: 'News events', node: 'layer-events', color: '#e8d58a', count: data.events.length, shape: 'bubble', sub: `${new Set(data.events.map(e => e.place)).size} places`}] : []),
   ...(data.hotspots.length ? [{key: 'fires', label: 'Hotspots', node: 'layer-fires', color: '#ff6a2b', count: data.hotspots.length, shape: 'flame', sub: `max FRP ${Math.max(...data.hotspots.map(p => p.frp || 0))} MW · 24 h`}] : []),
   ...(data.conflict.length ? [{key: 'conflict', label: 'Conflict events', node: 'layer-conflict', color: '#e5484d', count: data.conflict.length, shape: 'burst', sub: `${fmt(data.conflict.reduce((a, c) => a + (c.fatalities || 0), 0))} fatalities · ` + (data.private && data.private.acled ? data.private.acled.range.join(' to ') : '30 d')}] : []),
