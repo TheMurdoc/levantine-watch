@@ -94,4 +94,11 @@ state3 = {}
 fake_post.status = 401
 st = extra.enrich_flights([{"callsign": "CYP326"}], state3)
 assert not st[0]["ok"] and "401" in st[0]["note"], st
+
+# an expired token comes back as HTTP 200, success=false, with the token in the comment: it must not reach live.json
+fake_post.status = 200
+extra.requests = types.SimpleNamespace(post=lambda url, json=None, headers=None, timeout=None: Resp(
+    200, {"success": False, "cost": 0, "comment": "Token test-token is inactive/expired ."}), get=None)
+st = extra.enrich_flights([{"callsign": "CYP326"}], {})
+assert not st[0]["ok"] and "test-token" not in st[0]["note"] and "<token> is inactive" in st[0]["note"], st
 print("airnav OK:", len(posts), "requests mocked")

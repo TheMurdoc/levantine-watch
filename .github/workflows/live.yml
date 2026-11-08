@@ -76,9 +76,9 @@ jobs:
           FR24_MAX_PER_RUN: "15"
           FLIGHTAWARE_MAX_PER_RUN: "5"
           AIRNAV_MODE: "routes"        # "routes", "area" or "routes,area"; area also fills in when ADS-B is down
-          AIRNAV_EVERY_MIN: "30"
-          AIRNAV_MAX_PER_DAY: "48"
-          AIRNAV_MAX_PER_RUN: "20"     # callsigns per routes request
+          AIRNAV_EVERY_MIN: "60"
+          AIRNAV_MAX_PER_DAY: "6"         # ~10,000 credits bought Nov 2026: at most 6 calls x 15 callsigns a day
+          AIRNAV_MAX_PER_RUN: "15"     # callsigns per routes request (only those FR24 did not resolve)
           PAGES_BASE_URL: ${{ steps.pages.outputs.base_url }}
           AIS_LISTEN_SECONDS: "90"
           GNSS_WINDOW_HOURS: "6"

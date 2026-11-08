@@ -310,7 +310,8 @@ HAPI_DETAIL = ["LBN", "SYR", "PSE"]  # countries with IDP / IPC / appeal data in
 def _hapi(path: str, app_id: str, **params) -> list[dict]:
     r = requests.get(HAPI_BASE + path, headers=UA, timeout=45,
                      params={"app_identifier": app_id, "output_format": "json", "limit": 10000, **params})
-    r.raise_for_status()
+    if r.status_code >= 400:  # HTTPError text carries the URL, and the identifier is base64 of name:email; errors end up in public live.json
+        raise RuntimeError(f"HTTP {r.status_code} for {path}")
     return (r.json() or {}).get("data") or []
 
 
@@ -586,8 +587,8 @@ def _airnav_post(tok: str, body: dict, state: dict) -> dict:
                       headers={**UA, "Accept": "application/json", "Authorization": f"Bearer {tok}"})
     r.raise_for_status()
     j = r.json() or {}
-    if j.get("success") is False:
-        raise RuntimeError(str(j.get("comment") or "success=false")[:100])
+    if j.get("success") is False:  # the comment can echo the token ("Token <tok> is inactive/expired"); it ends up in public live.json
+        raise RuntimeError(str(j.get("comment") or "success=false").replace(tok, "<token>")[:100])
     state.setdefault("_airnav", {})["cost"] = state.get("_airnav", {}).get("cost", 0) + int(j.get("cost") or 0)
     return j
 
@@ -669,8 +670,10 @@ def enrich_flights(flights: list[dict], state: dict):
         del cache[k]
     todo = sorted([f for f in flights if f.get("callsign") and f["callsign"] not in cache], key=_priority)
     statuses = []
-    if fr_tok and todo:
-        batch = todo[: min(15, int(_env("FR24_MAX_PER_RUN") or 15))]
+    # FR24 rejects the whole request (400 "not a valid ICAO callsign") for one callsign with a space or under 3 chars
+    fr_todo = [f for f in todo if re.fullmatch(r"[A-Z0-9-]{3,8}", f["callsign"])]
+    if fr_tok and fr_todo:
+        batch = fr_todo[: min(15, int(_env("FR24_MAX_PER_RUN") or 15))]
         try:
             r = requests.get("https://fr24api.flightradar24.com/api/live/flight-positions/full", timeout=30,
                              headers={**UA, "Accept": "application/json", "Accept-Version": "v1", "Authorization": f"Bearer {fr_tok}"},
