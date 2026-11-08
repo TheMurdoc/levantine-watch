@@ -420,7 +420,7 @@ def fetch_wingbits_gnss(state: dict, every_s: int = 1800):
             b = [[round(la, 4), round(lo, 4)] for la, lo in h3.cell_to_boundary(hx["h3Index"])]
             # mlatAircraftHours: aircraft that lost GPS entirely and were located by MLAT (Wingbits counts them as NACp 0)
             mlat_h, ah, anp = hx.get("mlatAircraftHours"), hx.get("aircraftHours"), hx.get("adsbNpAvg")
-            hexes.append({"h3": hx["h3Index"], "b": b, "np": round(npm, 2), "samples": int(hx.get("sampleCount") or 0), "aircraft": int(hx.get("aircraftCount") or 0),
+            hexes.append({"h3": h3.int_to_str(h3.str_to_int(hx["h3Index"])), "b": b,  # Wingbits zero-pads to 16 chars; h3 keys are 15 "np": round(npm, 2), "samples": int(hx.get("sampleCount") or 0), "aircraft": int(hx.get("aircraftCount") or 0),
                           "sev": round(max(0.0, min(1.0, (9 - npm) / 9)), 3),
                           **({"mlat_h": round(float(mlat_h), 1)} if mlat_h else {}), **({"ah": round(float(ah), 1)} if ah else {}),
                           **({"adsb_np": round(float(anp), 2)} if anp is not None else {})})

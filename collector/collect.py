@@ -244,6 +244,7 @@ def cross_check_gnss(wb_hexes: list[dict], state: dict) -> int:
             e[0] += s; e[1] += n; e[2].update(ids)
     n_x = 0
     for x in wb_hexes:
+        x["h3"] = h3.int_to_str(h3.str_to_int(x["h3"]))  # canonical form (Wingbits zero-pads, older cached grids too)
         k = h3.cell_to_parent(x["h3"], res) if h3.get_resolution(x["h3"]) > res else x["h3"]
         if k in agg:
             s, n, ids = agg[k]
