@@ -23,9 +23,16 @@ Environment (all optional; the workflow provides the first two automatically)
                                     issued / posted (default 30)
   NAVTEX_UPCOMING_DAYS              keep a warning whose validity starts within this many days (default 14)
 
-SeaLagom (https://www.sealagom.com, optional): the same warnings pulled from an aggregator of NAVAREA and
-coastal / NAVTEX broadcasts, so the layer fills without anyone pasting text. Only the warning TEXT is read
-(free developer allowance); positions are parsed here, as for the inbox.
+SeaLagom (https://www.sealagom.com): the same warnings pulled from an aggregator of NAVAREA and coastal /
+NAVTEX broadcasts, so the layer fills without anyone pasting text. Only the warning TEXT is read; positions
+are parsed here, as for the inbox. Two routes, merged and de-duplicated:
+  * Station feeds, no key: SeaLagom publishes every region's warnings in force as a JSON Feed
+    (/feeds/coastal/<id>.json, /feeds/navarea/<id>.json). Irakleio (Crete) NAVTEX is only reachable this way:
+    its messages are not in the /api/v2/messages/ index.
+  * The token API (optional): a box query that also picks up warnings from regions not listed below.
+  SEALAGOM_FEEDS                    comma list of feed paths (default: Irakleio, Antalya, Izmir, Cyprus,
+                                    Hellenic NAVWARNs, NAVAREA III; "off" disables the feeds)
+  SEALAGOM_FEED_EVERY_MIN           minutes between feed pulls (default 60; one request per feed)
   SEALAGOM_API_TOKEN (or SEALAGOM_API_KEY)   X-API-Token for https://www.sealagom.com/api/v2/
   SEALAGOM_EVERY_MIN                minutes between pulls (default 120; the free allowance is ~100 calls a day)
   SEALAGOM_MAX_PAGES                pages per pull (default 4; 50 records a page on the free tier, 200 paid)
@@ -342,6 +349,24 @@ def _from_files(errs: list) -> list[dict]:
 
 
 SEALAGOM = "https://www.sealagom.com"
+# SeaLagom regions near the map: feed path -> (station name shown, warning-number prefix, language of the text,
+# short name for the status line).
+# Ids from GET /api/v1/coastal/ (8 Nov 2026). The prefix keeps numbers unique across stations: "NAVWARN 1089/26"
+# is issued by Antalya, Izmir and the Hellenic service alike. Cyprus keeps the plain NAVWARN number so that the
+# same warning pasted into the inbox is recognised as a duplicate.
+SL_REGIONS = {
+    "coastal/82": ("Irakleio NAVTEX (Crete)", "IRAKLEIO NAVWARN", "en", "Irakleio"),
+    "coastal/83": ("Kerkyra NAVTEX", "KERKYRA NAVWARN", "en", "Kerkyra"),
+    "coastal/84": ("Limnos NAVTEX", "LIMNOS NAVWARN", "en", "Limnos"),
+    "coastal/33": ("ANTALYA NAVTEX", "ANTALYA NAVTEX", "tr", "Antalya"),
+    "coastal/32": ("IZMIR NAVTEX", "IZMIR NAVTEX", "tr", "Izmir"),
+    "coastal/31": ("Istanbul NAVTEX", "ISTANBUL NAVTEX", "tr", "Istanbul"),
+    "coastal/128": ("Cyprus Coastal", "NAVWARN", "en", "Cyprus"),
+    "coastal/86": ("Hellenic Navigational Warnings", "HELLENIC NAVWARN", "en", "Hellenic NAVWARNs"),
+    "coastal/186": ("Suez Canal", "SUEZ CANAL", "en", "Suez"),
+    "navarea/3": ("NAVAREA III", "NAVAREA III", "en", "NAVAREA III"),
+}
+SL_FEEDS_DEFAULT = "coastal/82,coastal/33,coastal/32,coastal/128,coastal/86,navarea/3"
 _SL_KEEP = ("id", "scope", "region_id", "region_title", "title", "country", "number", "content", "content_en",
             "source_language", "added_on", "cancel_date")
 
@@ -370,10 +395,7 @@ def _sealagom_pull(token: str, errs: list) -> tuple[list[dict], int]:
     return out, calls
 
 
-# Short region prefixes so that warning numbers stay unique across stations ("NAVWARN 1089/26" is issued by
-# Antalya, Izmir and the Hellenic service alike). Cyprus keeps the plain NAVWARN number so that the same
-# warning pasted into the inbox is recognised as a duplicate.
-_SL_PREFIX = {"Hellenic Navigational Warnings": "HELLENIC NAVWARN", "Cyprus Coastal": "NAVWARN"}
+_SL_PREFIX = {name: prefix for name, prefix, *_ in SL_REGIONS.values()}
 
 
 def _sl_number(title: str, parsed: str | None, api_number: str | None) -> str | None:
@@ -388,7 +410,8 @@ def _sl_number(title: str, parsed: str | None, api_number: str | None) -> str | 
 
 
 def _sealagom_convert(rec: dict) -> dict | None:
-    title = (rec.get("title") or rec.get("region_title") or "SeaLagom").strip()
+    known = SL_REGIONS.get(f"{rec.get('scope') or 'coastal'}/{rec.get('region_id')}")
+    title = known[0] if known else (rec.get("title") or rec.get("region_title") or "SeaLagom").strip()
     src = f"SeaLagom · {title}"
     url = f"{SEALAGOM}/{rec.get('scope') or 'coastal'}/{rec.get('region_id')}/message/{rec.get('id')}/"
     lang = rec.get("source_language") or "en"
@@ -417,11 +440,59 @@ def _sealagom_convert(rec: dict) -> dict | None:
     return m
 
 
+_FEED_URL = re.compile(r"/(coastal|navarea)/(\d+)/message/(\d+)/?$")
+_TR_TEXT = re.compile(r"[ĞŞİğşı]|\d\s*K\s*-\s*\d")
+
+
+def _feed_to_rec(path: str, item: dict) -> dict | None:
+    """One JSON Feed item -> the /api/v2/messages/ record shape that _sealagom_convert reads."""
+    m = _FEED_URL.search(item.get("url") or item.get("id") or "")
+    if not m:
+        return None
+    scope, region, mid = m.group(1), int(m.group(2)), int(m.group(3))
+    name, _, lang, _short = SL_REGIONS.get(f"{scope}/{region}", (None, None, "en", None))
+    text = item.get("content_text") or ""
+    num = re.search(r"(\d{1,4}/\d{2})\s*$", (item.get("title") or "").strip())
+    return {"id": mid, "scope": scope, "region_id": region, "title": name or (item.get("tags") or [None])[0],
+            "number": num.group(1) if num else None, "content": text,
+            "source_language": "tr" if lang == "tr" and _TR_TEXT.search(normalize(text)) else "en",
+            "added_on": (item.get("date_published") or "")[:19] or None, "cancel_date": None}
+
+
+def _sealagom_feeds(state: dict, errs: list) -> tuple[list[dict], str]:
+    """Open station feeds (no token). Cached in state; one request per feed every SEALAGOM_FEED_EVERY_MIN."""
+    import time as _time
+    paths = [x.strip().strip("/") for x in (os.environ.get("SEALAGOM_FEEDS") or SL_FEEDS_DEFAULT).split(",") if x.strip()]
+    if paths == ["off"]:
+        return [], ""
+    every = int(float(os.environ.get("SEALAGOM_FEED_EVERY_MIN") or 60) * 60)
+    cache = state.get("sealagom_feeds") or {}
+    if _time.time() - state.get("_t", {}).get("sealagom_feeds", 0) >= every:
+        for path in paths:
+            try:
+                r = requests.get(f"{SEALAGOM}/feeds/{path}.json", headers={**UA, "Accept": "application/feed+json, application/json"}, timeout=40)
+                r.raise_for_status()
+                cache[path] = [x for x in (_feed_to_rec(path, it) for it in (r.json() or {}).get("items") or []) if x]
+            except Exception as e:  # keep that feed's previous pull
+                errs.append(f"SeaLagom feed {path}: {str(e)[:80]}")
+        state["sealagom_feeds"] = cache = {k: v for k, v in cache.items() if k in paths}
+        state.setdefault("_t", {})["sealagom_feeds"] = int(_time.time())
+    short = lambda p: SL_REGIONS[p][3] if p in SL_REGIONS else p
+    recs = [r for p in paths for r in cache.get(p, [])]
+    return recs, f"{len(recs)} in force from {len(paths)} station feeds ({', '.join(short(p) for p in paths)})"
+
+
 def _from_sealagom(state: dict, errs: list) -> tuple[list[dict], dict]:
     import time as _time
     token = os.environ.get("SEALAGOM_API_TOKEN", "").strip() or os.environ.get("SEALAGOM_API_KEY", "").strip()
+    feed_recs, feed_note = _sealagom_feeds(state, errs)
     if not token:
-        return [], {"name": "SeaLagom", "note": "not configured (SEALAGOM_API_TOKEN)", "ok": False, "live": True}
+        if not feed_note:
+            return [], {"name": "SeaLagom", "note": "not configured (SEALAGOM_API_TOKEN, feeds off)", "ok": False, "live": True}
+        out = [m for m in (_sealagom_convert(r) for r in feed_recs) if m]
+        f_errs = [e for e in errs if e.startswith("SeaLagom")]
+        return out, {"name": "SeaLagom", "note": feed_note + "; API box query off (no SEALAGOM_API_TOKEN)" + (f"; {'; '.join(f_errs)}" if f_errs else ""),
+                     "ok": bool(feed_recs), "live": True}
     every = int(float(os.environ.get("SEALAGOM_EVERY_MIN") or 120) * 60)
     cache = state.get("sealagom")
     fresh = cache is not None and _time.time() - state.get("_t", {}).get("sealagom", 0) < every
@@ -442,11 +513,14 @@ def _from_sealagom(state: dict, errs: list) -> tuple[list[dict], dict]:
             errs.append(f"SeaLagom: {str(e)[:100]}")
             note_tail = "showing cached, " + note_tail
     cache = cache or []
-    out = [m for m in (_sealagom_convert(r) for r in cache) if m]
+    have = {(r.get("scope"), r.get("id")) for r in feed_recs}
+    api_only = [r for r in cache if (r.get("scope"), r.get("id")) not in have]
+    out = [m for m in (_sealagom_convert(r) for r in feed_recs + api_only) if m]
     regions = sorted({(r.get("title") or r.get("region_title") or "?").strip() for r in cache})
     sl_errs = [e for e in errs if e.startswith("SeaLagom")]
-    note = f"{len(cache)} warnings in force in the box from {len(regions)} regions ({note_tail})" + (f"; {'; '.join(sl_errs)}" if sl_errs else "")
-    return out, {"name": "SeaLagom", "note": note, "ok": bool(cache) and not sl_errs, "live": True}
+    api_errs = [e for e in sl_errs if not e.startswith("SeaLagom feed")]
+    note = (feed_note + "; " if feed_note else "") + f"API: {len(cache)} in the box from {len(regions)} regions ({note_tail})" + (f"; {'; '.join(sl_errs)}" if sl_errs else "")
+    return out, {"name": "SeaLagom", "note": note, "ok": bool(cache or feed_recs) and not api_errs, "live": True}
 
 
 def fetch_navtex(state: dict):
@@ -459,11 +533,16 @@ def fetch_navtex(state: dict):
     seen, keep = set(), []
     for m in msgs:
         key = m.get("number") or m["id"]
+        # the same broadcast pasted into the inbox ("NAVWARN 1411/26") and relayed by a feed ("IRAKLEIO NAVWARN
+        # 1411/26"): NAVTEX transmitter letter + serial number identify it whatever the number prefix
+        b1 = f"B1 {m['b1']} {key.split(' ')[-1]}" if m.get("b1") and m.get("number") else None
         if m.get("cancels") and not m.get("points"):
             continue  # a pure cancellation message: it removes others, it is not a warning itself
-        if key in seen or key in cancelled or not _in_region(m) or not _active(m, now):
+        if key in seen or (b1 and b1 in seen) or key in cancelled or not _in_region(m) or not _active(m, now):
             continue
         seen.add(key)
+        if b1:
+            seen.add(b1)
         keep.append(m)
     keep.sort(key=lambda m: m.get("issued") or "", reverse=True)
     inbox_on = bool(os.environ.get("NAVTEX_INBOX_FILE") or (os.environ.get("GITHUB_TOKEN") and os.environ.get("GITHUB_REPOSITORY"))) or (Path(__file__).resolve().parent.parent / "navtex").is_dir()
@@ -471,7 +550,8 @@ def fetch_navtex(state: dict):
     n_inbox = sum(1 for m in keep if not str(m.get("id", "")).startswith("sealagom"))
     n_sl = len(keep) - n_inbox
     if inbox_on:
-        note = f"{n_inbox} active warnings from the inbox" + (f" ({len(cancelled)} cancelled by later messages)" if cancelled else "") + (f"; problems: {'; '.join(inbox_errs)}" if inbox_errs else "")
+        own_cancels = {c for m in msgs if not str(m.get("id", "")).startswith("sealagom") for c in m.get("cancels", [])}
+        note = f"{n_inbox} active warnings from the inbox" + (f" ({len(own_cancels)} cancelled by later messages)" if own_cancels else "") + (f"; problems: {'; '.join(inbox_errs)}" if inbox_errs else "")
         inbox_status = {"name": "NAVTEX inbox", "note": note, "ok": not inbox_errs, "live": True}
     else:
         inbox_status = {"name": "NAVTEX inbox", "note": "not configured (label an issue `navtex`, or add navtex/*.txt)", "ok": False, "live": True}

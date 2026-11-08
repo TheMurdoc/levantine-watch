@@ -422,7 +422,7 @@ a.tbtn{text-decoration:none;font-size:9.5px;letter-spacing:.04em}
       <div class="grp row"><button class="tbtn" id="rot-left" aria-label="Rotate left">&#8634;</button><button class="tbtn" id="rot-right" aria-label="Rotate right">&#8635;</button></div>
       <div class="grp"><button class="tbtn" id="outline-cycle" aria-label="Change border outline style" title="Border outline style">&#9680;</button><a class="tbtn" id="view-osm" target="_blank" rel="noopener noreferrer" aria-label="Open this view in OpenStreetMap" title="Open this view in OpenStreetMap">OSM</a></div>
       <div class="grp"><button class="tbtn dls" id="dls-cycle" aria-label="Cyprus overlay from the Department of Lands and Surveys" title="Cyprus overlay (Department of Lands and Surveys)">DLS</button></div>
-      <div class="grp"><button class="tbtn reset" id="view-gsi" aria-label="Fly to the Crete to Cyprus cable corridor" title="Crete to Cyprus cable corridor (key G)">GSI</button><button class="tbtn reset" id="view-reset" aria-label="Reset view">RST</button></div>
+      <div class="grp"><button class="tbtn reset" id="view-wide" aria-label="Show the whole area from Crete and Rhodes to the Levant" title="Whole area: Crete, Rhodes and the Turkish coast to the Levant (key W)">ALL</button><button class="tbtn reset" id="view-gsi" aria-label="Fly to the Crete to Cyprus cable corridor" title="Crete to Cyprus cable corridor (key G)">GSI</button><button class="tbtn reset" id="view-reset" aria-label="Reset view">RST</button></div>
     </div>
     <div class="otoast" id="otoast" aria-live="polite"></div>
     <div class="hint" id="hint">drag to pan · scroll to zoom · click any marker or hexagon to open it in its origin app</div>
@@ -457,7 +457,7 @@ a.tbtn{text-decoration:none;font-size:9.5px;letter-spacing:.04em}
 
   <section class="card" id="card-navtex" hidden>
     <h2>Maritime warnings <span class="n" id="nv-n"></span></h2>
-    <p class="note">NAVTEX / NAVAREA III notices from the SeaLagom warning feed (Cyprus, Antalya, Izmir, Hellenic coastal stations and NAVAREA III) and from the repository inbox: cable routes, survey areas, firing and exercise zones. Click a row to fly to it. Shaded band = the clearance the notice asks vessels to keep. Positions are parsed from the broadcast text by this page's collector, not taken from an official chart feed: check the issuing authority before relying on one.</p>
+    <p class="note">NAVTEX / NAVAREA III notices relayed by SeaLagom from the stations around the map (Irakleio on Crete, Antalya, Izmir, Cyprus, the Hellenic NAVWARN service and NAVAREA III) and from the repository inbox: cable routes, survey areas, firing and exercise zones. Click a row to fly to it. Shaded band = the clearance the notice asks vessels to keep. Positions are parsed from the broadcast text by this page's collector, not taken from an official chart feed: check the issuing authority before relying on one.</p>
     <div id="nv-list" class="newswrap"></div>
   </section>
 
@@ -1021,11 +1021,11 @@ function flightLinks(f) {
   if (cs) {
     L.push(lk('FR24 flight history', `https://www.flightradar24.com/data/flights/${enc(cs.toLowerCase())}`));
     L.push(lk('FlightAware', `https://www.flightaware.com/live/flight/${enc(cs)}`));
-    L.push(lk('RadarBox', `https://www.radarbox.com/data/flights/${enc(cs)}`));
+    L.push(lk('AirNav Radar', f.route && f.route.url ? f.route.url : `https://www.airnavradar.com/data/flights/${enc(cs)}`));
   }
   if (reg) {
     if (cs) L.push(lk('FR24 aircraft', `https://www.flightradar24.com/data/aircraft/${enc(reg.toLowerCase())}`));
-    L.push(lk('RadarBox registration', `https://www.radarbox.com/data/registration/${enc(reg)}`));
+    L.push(lk('AirNav Radar registration', `https://www.airnavradar.com/data/registration/${enc(reg)}`));
     L.push(lk('Planespotters', `https://www.planespotters.net/search?q=${enc(reg)}`));
   }
   return L;
@@ -1849,7 +1849,7 @@ data.sources.forEach(s => {
 
 /* ---------- pan / zoom / rotate ---------- */
 const svg = document.getElementById('map'), viewport = document.getElementById('viewport'), compass = document.getElementById('compass');
-const cx = W / 2, cy = H / 2, view = {px: 0, py: 0, scale: 1, rot: 0}, SCALE_MIN = .6, SCALE_MAX = 24;
+const cx = W / 2, cy = H / 2, view = {px: 0, py: 0, scale: 1, rot: 0}, SCALE_MIN = .4, SCALE_MAX = 24;
 const osmBtn = document.getElementById('view-osm');
 const OUTLINES = [['tactical', 'Tactical glow'], ['crisp', 'Crisp lines'], ['contrast', 'High contrast'], ['minimal', 'Minimal']];
 const otoast = document.getElementById('otoast'); let otimer = null;
@@ -1977,6 +1977,9 @@ function fitGsi() {
   fitBox(x0, y0, x1, y1);
 }
 document.getElementById('view-gsi').addEventListener('click', fitGsi);
+/* whole collector extent: aircraft and GNSS hexagons reach west to Crete, Rhodes and the Turkish south-west coast */
+const fitWide = () => fitBox(xOf(23.0), yOf(37.3), xOf(40.2), yOf(29.0), 10);
+document.getElementById('view-wide').addEventListener('click', fitWide);
 svg.addEventListener('keydown', e => {
   const step = 30 / view.scale; let used = true;
   if (e.key === 'ArrowLeft') view.px += step; else if (e.key === 'ArrowRight') view.px -= step;
@@ -1985,6 +1988,7 @@ svg.addEventListener('keydown', e => {
   else if (e.key === '-' || e.key === '_') zoomAt({x: cx, y: cy}, view.scale / 1.3);
   else if (e.key === '[') view.rot -= 15; else if (e.key === ']') view.rot += 15;
   else if (e.key === 'g' || e.key === 'G') fitGsi();
+  else if (e.key === 'w' || e.key === 'W') fitWide();
   else if (e.key === '0') reset(); else if (e.key === 'o' || e.key === 'O') { document.getElementById('outline-cycle').click(); }
   else if (e.key === 'd' || e.key === 'D') dlsBtn.click(); else used = false;
   if (used) { applyView(); e.preventDefault(); }

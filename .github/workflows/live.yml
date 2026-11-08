@@ -60,6 +60,7 @@ jobs:
           DATADOCKED_API_KEY: ${{ secrets.DATADOCKED_API_KEY }}
           FR24_API_TOKEN: ${{ secrets.FR24_API_TOKEN }}
           FLIGHTAWARE_API_KEY: ${{ secrets.FLIGHTAWARE_API_KEY }}
+          AIRNAV_API_TOKEN: ${{ secrets.AIRNAV_API_TOKEN }}   # AirNav Radar On Demand API (bearer token)
           NAVTEX_INBOX_FILE: navtex_inbox.json        # written by the step above; the collector holds no GitHub token
           SEALAGOM_API_TOKEN: ${{ secrets.SEALAGOM_API_TOKEN }}   # SeaLagom NAVAREA / coastal warning texts (free developer key)
           NMS_CLIENT_ID: ${{ secrets.NMS_CLIENT_ID }}           # FAA NMS-API (NOTAMs), from the FAA onboarding spreadsheet (KEY)
@@ -74,6 +75,10 @@ jobs:
           DATADOCKED_DETAILS_EVERY_MIN: "10080" # vessel-details lookup (fallback after Datalastic) once a week
           FR24_MAX_PER_RUN: "15"
           FLIGHTAWARE_MAX_PER_RUN: "5"
+          AIRNAV_MODE: "routes"        # "routes", "area" or "routes,area"; area also fills in when ADS-B is down
+          AIRNAV_EVERY_MIN: "30"
+          AIRNAV_MAX_PER_DAY: "48"
+          AIRNAV_MAX_PER_RUN: "20"     # callsigns per routes request
           PAGES_BASE_URL: ${{ steps.pages.outputs.base_url }}
           AIS_LISTEN_SECONDS: "90"
           GNSS_WINDOW_HOURS: "6"

@@ -16,6 +16,7 @@ Environment
   GNSS_WINDOW_HOURS   rolling window for GNSS hexes (default 6)
   HAPI_APP_IDENTIFIER HDX HAPI app identifier (humanitarian context); GDACS needs no key
   NMS_CLIENT_ID / NMS_CLIENT_SECRET / NMS_ENV   FAA NMS-API (airspace NOTAMs), see collector/nms.py
+  AIRNAV_API_TOKEN    AirNav Radar On Demand API (routes; AIRNAV_MODE=area adds aircraft), see collector/extra.py
   NAVTEX_INBOX_FILE   NAVTEX inbox issues fetched by the workflow, see collector/navtex.py
   SEALAGOM_API_TOKEN  SeaLagom warnings feed (NAVAREA / coastal / NAVTEX text), see collector/navtex.py
   (see README.md for the other optional keys)
@@ -48,8 +49,12 @@ LON_MIN, LON_MAX = 32.0, 40.2
 # AIS only: the Crete-Cyprus cable corridor west of the old map edge, where the GSI survey ships work.
 # Set AIS_CORRIDOR=0 to listen to the main box only (fewer messages).
 AIS_CORRIDOR = (33.3, 36.2, 23.5, 32.0)  # lat_min, lat_max, lon_min, lon_max
-# Four 250 nm circles cover the whole map extent.
-AIR_POINTS = [(35.3, 33.8), (35.3, 38.4), (31.2, 33.8), (31.2, 38.4)]
+# Aircraft and GNSS hexagons cover the wide extent: west to Crete, Rhodes and the Turkish south-west coast
+# (the page already draws that area). AIS keeps the boxes above, so the vessel stream does not grow.
+AIR_BOX = (29.0, 37.3, 23.0, 40.2)  # lat_min, lat_max, lon_min, lon_max (same as navtex.REGION / nms.REGION)
+# Five 250 nm circles: four over the Levant box, one centred south-east of Crete that reaches Kythira,
+# Rhodes, Bodrum and Fethiye, and overlaps the Cyprus circles at 29 E.
+AIR_POINTS = [(35.3, 33.8), (35.3, 38.4), (31.2, 33.8), (31.2, 38.4), (34.8, 27.4)]
 AIR_RADIUS_NM = 250
 AIR_PROVIDERS = [
     ("airplanes.live", "https://api.airplanes.live/v2/point/{lat}/{lon}/{r}"),
@@ -124,6 +129,11 @@ def ais_boxes() -> list[tuple[float, float, float, float]]:
     return boxes
 
 
+def in_air_box(lat, lon) -> bool:
+    a, b, c, d = AIR_BOX
+    return lat is not None and lon is not None and a <= lat <= b and c <= lon <= d
+
+
 def in_ais_area(lat, lon) -> bool:
     return lat is not None and lon is not None and any(a <= lat <= b and c <= lon <= d for a, b, c, d in ais_boxes())
 
@@ -168,7 +178,7 @@ def fetch_aircraft() -> tuple[list[dict], dict, list[dict]]:
                 for a in (r.json().get("ac") or r.json().get("aircraft") or []):
                     if a.get("hex"):
                         seen[a["hex"]] = a
-            raw = [a for a in seen.values() if in_box(a.get("lat"), a.get("lon"))]
+            raw = [a for a in seen.values() if in_air_box(a.get("lat"), a.get("lon"))]
             flights = []
             for a in raw:
                 alt = a.get("alt_baro")
@@ -405,8 +415,15 @@ def main() -> int:
     elif (state.get("last_flights") or {}).get("t", 0) > t_now.timestamp() - 1800:
         flights = state["last_flights"]["flights"]  # keep the previous run's aircraft (< 30 min) rather than an empty sky
         st["note"] += f"; showing previous run's {len(flights)} aircraft"
-    live["flights"] = flights
     live["sources"].append(st)
+    an_fl, an_st = extra.fetch_airnav_area(state, have_adsb=bool(raw))
+    if an_st:
+        n_add = extra.merge_airnav(flights, an_fl)
+        an_st["note"] += f"; {n_add} not seen by ADS-B added to the map"
+        live["sources"].append(an_st)
+    if not (extra._env("AIRNAV_API_TOKEN") or extra._env("AIRNAV_API_KEY")):
+        live["sources"].append({"name": "AirNav Radar", "note": "not configured (AIRNAV_API_TOKEN)", "ok": False, "live": True})
+    live["flights"] = flights
     try:
         gnss, st = update_gnss(raw, state, window_h, t_now)
         live["gnss"] = gnss

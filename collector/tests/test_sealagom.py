@@ -108,6 +108,7 @@ print("sealagom conversion OK:", len(PAGE["results"]), "records")
 
 # ---------------------------------------------------------------- fetch_navtex with the feed on, inbox off
 os.environ["SEALAGOM_API_TOKEN"] = "test-token"
+os.environ["SEALAGOM_FEEDS"] = "off"  # API path only here; the open station feeds are tested in test_sealagom_feeds.py
 for k in ("NAVTEX_INBOX_FILE", "GITHUB_TOKEN", "GITHUB_REPOSITORY"):
     os.environ.pop(k, None)
 state = {}

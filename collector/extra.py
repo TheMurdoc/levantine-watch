@@ -1,5 +1,5 @@
 """Extra Levantine Watch sources: GDELT, NASA FIRMS, Cloudflare Radar, GDACS, HDX HAPI,
-Wingbits GNSS, and paid-API enrichment (Datalastic, Data Docked, Flightradar24, FlightAware).
+Wingbits GNSS, and paid-API enrichment (Datalastic, Data Docked, Flightradar24, AirNav Radar, FlightAware).
 
 ACLED is deliberately NOT here: its licence does not allow ACLED data on a public site, so it is
 fetched only by the private, local build (private/acled_private.py, outside this repository).
@@ -21,6 +21,7 @@ import requests
 
 UA = {"User-Agent": "levantine-watch/1.0 (+https://github.com/TheMurdoc/levantine-watch)"}
 LAT_MIN, LAT_MAX, LON_MIN, LON_MAX = 29.0, 37.3, 32.0, 40.2
+AIR_BOX = (29.0, 37.3, 23.0, 40.2)  # aircraft / GNSS extent incl. Crete, Rhodes and the Turkish south-west coast
 REGION_CC = {"CY", "LB", "SY", "IL", "PS", "JO", "EG", "TR", "IQ", "SA"}
 
 
@@ -409,7 +410,7 @@ def fetch_wingbits_gnss(state: dict, every_s: int = 1800):
     try:
         import h3
         r = requests.get("https://customer-api.wingbits.com/v1/gps/jam", timeout=40, headers={**UA, "x-api-key": key},
-                         params={"min_lat": LAT_MIN, "max_lat": LAT_MAX, "min_lng": LON_MIN, "max_lng": LON_MAX})
+                         params={"min_lat": AIR_BOX[0], "max_lat": AIR_BOX[1], "min_lng": AIR_BOX[2], "max_lng": AIR_BOX[3]})
         r.raise_for_status()
         j = r.json()
         hexes = []
@@ -568,14 +569,99 @@ def fetch_datadocked_area(state: dict):
     return out, {"name": "Data Docked", "note": f"{len(out)} vessels near ports; {note}", "ok": bool(out), "live": True}
 
 
-# ----------------------------------------------------------------------------- flight enrichment (FR24 -> FlightAware)
+# ----------------------------------------------------------------------------- AirNav Radar (On Demand API v2)
+# OpenAPI: https://www.airnavradar.com/api/openapi (v2.4.22, Nov 2026). Bearer token from the AirNav API dashboard.
+# POST /flights/live takes a bounding box and/or lists (flightIds = callsigns, modeSHexCodes, registrations) and
+# returns positions plus departure / arrival airports. Every answer carries its credit "cost".
+AIRNAV = "https://api.airnavradar.com/v2"
+
+
+def _airnav_modes() -> set[str]:
+    return {m.strip().lower() for m in (_env("AIRNAV_MODE") or "routes").split(",") if m.strip()}
+
+
+def _airnav_post(tok: str, body: dict, state: dict) -> dict:
+    _spend(state, "AirNav")
+    r = requests.post(f"{AIRNAV}/flights/live", json=body, timeout=40,
+                      headers={**UA, "Accept": "application/json", "Authorization": f"Bearer {tok}"})
+    r.raise_for_status()
+    j = r.json() or {}
+    if j.get("success") is False:
+        raise RuntimeError(str(j.get("comment") or "success=false")[:100])
+    state.setdefault("_airnav", {})["cost"] = state.get("_airnav", {}).get("cost", 0) + int(j.get("cost") or 0)
+    return j
+
+
+def _airnav_route(x: dict) -> dict:
+    return {"orig": x.get("depAirportIcao"), "orig_iata": x.get("depAirportIata"), "orig_city": x.get("depAirportCity"),
+            "dest": x.get("arrAirportIcao"), "dest_iata": x.get("arrAirportIata"), "dest_city": x.get("arrAirportCity"),
+            "op": x.get("airlineIcao") or x.get("airlineName"), "flight": x.get("flightNumberIata") or x.get("flightNumberIcao"),
+            "type": x.get("aircraftType"), "reg": x.get("aircraftRegistration"), "url": x.get("flightUrl")}
+
+
+def _airnav_ok_to_call(state: dict, key: str) -> str | None:
+    """None when a call is allowed now, else the reason it is not."""
+    if _budget_left(state, "AirNav", _per_day("AIRNAV_MAX_PER_DAY", 48)) <= 0:
+        return "daily request cap reached (AIRNAV_MAX_PER_DAY)"
+    if not _due(state, key, int(float(_env("AIRNAV_EVERY_MIN") or 30) * 60)):
+        return "cached"
+    return None
+
+
+def fetch_airnav_area(state: dict, have_adsb: bool):
+    """AIRNAV_MODE=area, or ADS-B aggregators all down: every live flight in the aircraft box.
+    Returns (flights in the collector's format, status) or (None, None) when not in use this run."""
+    tok = _env("AIRNAV_API_TOKEN") or _env("AIRNAV_API_KEY")
+    if not tok or ("area" not in _airnav_modes() and have_adsb):
+        return None, None
+    cache = state.get("airnav_area")
+    why = _airnav_ok_to_call(state, "airnav_area")
+    if why:  # cached positions are only reused when ADS-B is down and they are under 30 min old
+        stale = not cache or time.time() - cache.get("t", 0) > 1800
+        return (None if have_adsb or stale else cache["flights"]), {"name": "AirNav Radar (area)", "note": f"{len((cache or {}).get('flights') or [])} aircraft at the last call, {why}", "ok": bool(cache), "live": True}
+    try:
+        j = _airnav_post(tok, {"minLatitude": AIR_BOX[0], "maxLatitude": AIR_BOX[1], "minLongitude": AIR_BOX[2], "maxLongitude": AIR_BOX[3]}, state)
+        out, routes = [], state.setdefault("routes", {})
+        now = int(time.time())
+        for x in j.get("flights") or []:
+            if x.get("latitude") is None or x.get("longitude") is None:
+                continue
+            cs = (x.get("callsign") or "").strip() or None
+            alt = x.get("altitude")
+            out.append({"lat": round(x["latitude"], 4), "lon": round(x["longitude"], 4), "hex": (x.get("aircraftModeS") or "").lower() or None,
+                        "callsign": cs, "reg": x.get("aircraftRegistration"), "type": x.get("aircraftType"),
+                        "alt": alt, "spd": x.get("groundSpeed"), "trk": x.get("heading"), "sq": str(x["squawkCode"]) if x.get("squawkCode") else None,
+                        "mil": "MILITARY" in [c.upper() for c in (x.get("aircraftClasses") or [])], "gnd": (alt == 0) or None,
+                        "src": "AirNav Radar"})
+            if cs and (x.get("depAirportIcao") or x.get("arrAirportIcao")):
+                routes[cs] = {"t": now, "ok": True, "src": "airnav", "d": _airnav_route(x)}
+        state["airnav_area"] = {"t": now, "flights": out}
+        _mark(state, "airnav_area")
+        return out, {"name": "AirNav Radar (area)", "note": f"{len(out)} aircraft in the box, {j.get('cost', '?')} credits this call" + ("" if have_adsb else " (ADS-B aggregators down)"), "ok": True, "live": True}
+    except Exception as e:
+        return (cache or {}).get("flights"), {"name": "AirNav Radar (area)", "note": f"failed: {_short(e)}" + (" (showing cached)" if cache else ""), "ok": bool(cache), "live": True}
+
+
+def merge_airnav(flights: list[dict], extra_fl: list[dict] | None) -> int:
+    """Adds AirNav aircraft that ADS-B did not report (by ICAO hex, else callsign). Returns how many were added."""
+    if not extra_fl:
+        return 0
+    hexes = {f.get("hex") for f in flights if f.get("hex")}
+    calls = {f.get("callsign") for f in flights if f.get("callsign")}
+    add = [f for f in extra_fl if not (f.get("hex") and f["hex"] in hexes) and not (f.get("callsign") and f["callsign"] in calls)]
+    flights.extend(add)
+    return len(add)
+
+
+# ----------------------------------------------------------------------------- flight enrichment (FR24 -> AirNav -> FlightAware)
 def _priority(f: dict) -> tuple:
     return (not f.get("mil"), f.get("type") is not None, f.get("callsign") or "")
 
 
 def enrich_flights(flights: list[dict], state: dict):
     fr_tok, fa_key = _env("FR24_API_TOKEN"), _env("FLIGHTAWARE_API_KEY")
-    if not (fr_tok or fa_key) or not flights:
+    an_tok = (_env("AIRNAV_API_TOKEN") or _env("AIRNAV_API_KEY")) if "routes" in _airnav_modes() else ""
+    if not (fr_tok or fa_key or an_tok) or not flights:
         return []
     cache = state.setdefault("routes", {})
     now = int(time.time())
@@ -601,8 +687,25 @@ def enrich_flights(flights: list[dict], state: dict):
             statuses.append({"name": "Flightradar24 API", "note": f"routes for {sum(1 for f in batch if found.get(f['callsign']))}/{len(batch)} callsigns this run (cached 6 h)", "ok": True, "live": True})
         except Exception as e:
             statuses.append({"name": "Flightradar24 API", "note": f"failed: {_short(e)}", "ok": False, "live": True})
+    if an_tok:  # callsigns still without a route after FR24 (or every callsign when FR24 is not set up)
+        an_todo = [f for f in sorted(flights, key=_priority) if f.get("callsign") and (f["callsign"] not in cache or (not cache[f["callsign"]].get("ok") and cache[f["callsign"]].get("src") == "fr24"))]
+        an_todo = an_todo[: int(_env("AIRNAV_MAX_PER_RUN") or 20)]
+        why = _airnav_ok_to_call(state, "airnav_routes") if an_todo else "nothing to look up"
+        if why:
+            statuses.append({"name": "AirNav Radar", "note": f"routes: {why}; {_budget_left(state, 'AirNav', _per_day('AIRNAV_MAX_PER_DAY', 48)):g} requests left today", "ok": True, "live": True})
+        else:
+            try:
+                j = _airnav_post(an_tok, {"flightIds": [f["callsign"] for f in an_todo]}, state)
+                found = {(x.get("callsign") or "").strip(): x for x in (j.get("flights") or []) if x.get("callsign")}
+                for f in an_todo:
+                    x = found.get(f["callsign"])
+                    cache[f["callsign"]] = {"t": now, "ok": bool(x), "src": "airnav", "d": _airnav_route(x) if x else {}}
+                _mark(state, "airnav_routes")
+                statuses.append({"name": "AirNav Radar", "note": f"routes for {sum(1 for f in an_todo if f['callsign'] in found)}/{len(an_todo)} callsigns, {j.get('cost', '?')} credits this call (cached 6 h)", "ok": True, "live": True})
+            except Exception as e:
+                statuses.append({"name": "AirNav Radar", "note": f"failed: {_short(e)}", "ok": False, "live": True})
     if fa_key:
-        fa_todo = [f for f in sorted(flights, key=_priority) if f.get("callsign") and (f["callsign"] not in cache or (not cache[f["callsign"]].get("ok") and cache[f["callsign"]].get("src") == "fr24"))]
+        fa_todo = [f for f in sorted(flights, key=_priority) if f.get("callsign") and (f["callsign"] not in cache or (not cache[f["callsign"]].get("ok") and cache[f["callsign"]].get("src") in ("fr24", "airnav")))]
         n_ok = n = 0
         for f in fa_todo[: int(_env("FLIGHTAWARE_MAX_PER_RUN") or 5)]:
             try:
@@ -627,7 +730,7 @@ def enrich_flights(flights: list[dict], state: dict):
         if c and c.get("d"):
             d = c["d"]
             f["route"] = {k: v for k, v in d.items() if v and k not in ("type", "reg")}
-            f["route"]["src"] = "Flightradar24" if c["src"] == "fr24" else "FlightAware"
+            f["route"]["src"] = {"fr24": "Flightradar24", "airnav": "AirNav Radar"}.get(c["src"], "FlightAware")
             if not f.get("type") and d.get("type"):
                 f["type"] = d["type"]
             if not f.get("reg") and d.get("reg"):
