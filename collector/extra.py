@@ -401,36 +401,87 @@ def fetch_hapi_context(state: dict, every_s: int = 12 * 3600):
 
 
 # ----------------------------------------------------------------------------- Wingbits GNSS
+# Customer API (https://customer-api.wingbits.com/docs/#tag/gps): GET /v1/gps/jam is the only GPS endpoint; it reports
+# NACp per H3 hex, not spoofing. Without `date` it serves the latest hour; with date=YYYY-MM-DD the day's aggregate,
+# which is where aircraftHours / mlatAircraftHours (aircraft that lost GPS entirely, located by MLAT) / adsbNpAvg live.
+WB = "https://customer-api.wingbits.com/v1"
+
+
+def _wb_jam(key: str, **params) -> dict:
+    r = requests.get(f"{WB}/gps/jam", timeout=40, headers={**UA, "x-api-key": key},
+                     params={"min_lat": AIR_BOX[0], "max_lat": AIR_BOX[1], "min_lng": AIR_BOX[2], "max_lng": AIR_BOX[3], **params})
+    r.raise_for_status()
+    return r.json() or {}
+
+
+def _wb_cell(idx: str) -> str:
+    import h3
+    return h3.int_to_str(h3.str_to_int(idx))  # Wingbits zero-pads to 16 chars; canonical h3 strings are 15
+
+
+def _wb_daily(key: str, state: dict) -> str:
+    """Today's (UTC) daily aggregate, every WINGBITS_DAILY_EVERY_MIN (default 180). Returns a status fragment."""
+    if not _due(state, "wb_day", int(float(_env("WINGBITS_DAILY_EVERY_MIN") or 180) * 60)):
+        return "day aggregate cached"
+    day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    try:
+        j = _wb_jam(key, date=day)
+    except Exception as e:
+        return f"day aggregate failed: {_short(e)}"
+    cells = {}
+    for hx in j.get("hexes", []):
+        d = {"day_np": hx.get("npAvg"), "ah": hx.get("aircraftHours"), "mlat_h": hx.get("mlatAircraftHours"), "adsb_np": hx.get("adsbNpAvg")}
+        cells[_wb_cell(hx["h3Index"])] = {k: round(float(v), 2) for k, v in d.items() if v is not None}
+    state["wb_day"] = {"date": day, "cells": cells}
+    _mark(state, "wb_day")
+    return f"day aggregate {day}: {len(cells)} hexagons, {sum(1 for c in cells.values() if c.get('mlat_h'))} with GPS-lost aircraft"
+
+
+def _wb_usage(key: str) -> str:
+    """GET /v1/account/usage is free (does not count against the monthly quota)."""
+    try:
+        r = requests.get(f"{WB}/account/usage", timeout=20, headers={**UA, "x-api-key": key})
+        r.raise_for_status()
+        u = r.json() or {}
+        return f"{u['monthlyRemaining']:g} of {u['monthlyLimit']:g} monthly requests left" if u.get("monthlyLimit") else ""
+    except Exception:
+        return ""
+
+
 def fetch_wingbits_gnss(state: dict, every_s: int = 1800):
     key = _env("WINGBITS_API_KEY")
     if not key:
         return None, None
     cache = state.get("wb_gnss")
+    day_note = _wb_daily(key, state)
     if cache is not None and not _due(state, "wb", every_s):
-        return cache, {"name": "Wingbits GNSS", "note": f"{len(cache['hexes'])} H3 hexagons, data to {cache['updated']} (cached)", "ok": True, "live": True}
+        _wb_merge_day(cache["hexes"], state)
+        return cache, {"name": "Wingbits GNSS", "note": f"{len(cache['hexes'])} H3 hexagons, data to {cache['updated']} (cached); {day_note}", "ok": True, "live": True}
     try:
         import h3
-        r = requests.get("https://customer-api.wingbits.com/v1/gps/jam", timeout=40, headers={**UA, "x-api-key": key},
-                         params={"min_lat": AIR_BOX[0], "max_lat": AIR_BOX[1], "min_lng": AIR_BOX[2], "max_lng": AIR_BOX[3]})
-        r.raise_for_status()
-        j = r.json()
+        j = _wb_jam(key)
         hexes = []
         for hx in j.get("hexes", []):
             npm = float(hx.get("npAvg") or 0)
             b = [[round(la, 4), round(lo, 4)] for la, lo in h3.cell_to_boundary(hx["h3Index"])]
-            # mlatAircraftHours: aircraft that lost GPS entirely and were located by MLAT (Wingbits counts them as NACp 0)
-            mlat_h, ah, anp = hx.get("mlatAircraftHours"), hx.get("aircraftHours"), hx.get("adsbNpAvg")
-            hexes.append({"h3": h3.int_to_str(h3.str_to_int(hx["h3Index"])), "b": b,  # Wingbits zero-pads to 16 chars; h3 keys are 15 "np": round(npm, 2), "samples": int(hx.get("sampleCount") or 0), "aircraft": int(hx.get("aircraftCount") or 0),
-                          "sev": round(max(0.0, min(1.0, (9 - npm) / 9)), 3),
-                          **({"mlat_h": round(float(mlat_h), 1)} if mlat_h else {}), **({"ah": round(float(ah), 1)} if ah else {}),
-                          **({"adsb_np": round(float(anp), 2)} if anp is not None else {})})
+            hexes.append({"h3": _wb_cell(hx["h3Index"]), "b": b, "np": round(npm, 2), "samples": int(hx.get("sampleCount") or 0),
+                          "aircraft": int(hx.get("aircraftCount") or 0), "sev": round(max(0.0, min(1.0, (9 - npm) / 9)), 3)})
+        _wb_merge_day(hexes, state)
         upd = (j.get("lastUpdated") or "").replace("Z", "")[:19]
         res = {"window_h": 1, "updated": (upd + "Z") if upd else None, "hexes": hexes, "src": "Wingbits"}
         state["wb_gnss"] = res
         _mark(state, "wb")
-        return res, {"name": "Wingbits GNSS", "note": f"{len(hexes)} H3 hexagons (NACp), data to {upd or '?'}", "ok": bool(hexes), "live": True}
+        usage = _wb_usage(key)
+        return res, {"name": "Wingbits GNSS", "note": f"{len(hexes)} H3 hexagons (NACp), data to {upd or '?'}; {day_note}" + (f"; {usage}" if usage else ""), "ok": bool(hexes), "live": True}
     except Exception as e:
         return cache, {"name": "Wingbits GNSS", "note": f"failed: {_short(e)}" + (" (showing cached)" if cache else "; using ADS-B NACp fallback"), "ok": bool(cache), "live": True}
+
+
+def _wb_merge_day(hexes: list[dict], state: dict) -> None:
+    """Copies the day aggregate's fields (day_np, ah, mlat_h, adsb_np) onto the hourly hexagons with the same index."""
+    cells = (state.get("wb_day") or {}).get("cells") or {}
+    for x in hexes:
+        x.update(cells.get(_wb_cell(x["h3"]), {}) if x.get("h3") else {})
 
 
 # ----------------------------------------------------------------------------- vessel enrichment (Datalastic -> Data Docked)

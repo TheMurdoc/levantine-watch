@@ -593,7 +593,7 @@ async function lwMergeLive(data) {
   if (Array.isArray(j.flights)) { data.flights = j.flights.map(put); got.flights = true; }
   if (Array.isArray(j.vessels) && j.vessels.length) { data.vessels = j.vessels.map(put); got.vessels = true; }
   if (j.gnss && Array.isArray(j.gnss.hexes) && j.gnss.hexes.length) {
-    data.hexes = j.gnss.hexes.map(h => ({d: 'M ' + h.b.map(([la, lo]) => X(lo).toFixed(1) + ',' + Y(la).toFixed(1)).join(' L ') + ' Z', np: h.np, samples: h.samples, aircraft: h.aircraft, sev: h.sev, mlat_h: h.mlat_h, adsb_np: h.adsb_np, x_np: h.x_np, x_ac: h.x_ac}));
+    data.hexes = j.gnss.hexes.map(h => ({d: 'M ' + h.b.map(([la, lo]) => X(lo).toFixed(1) + ',' + Y(la).toFixed(1)).join(' L ') + ' Z', np: h.np, samples: h.samples, aircraft: h.aircraft, sev: h.sev, mlat_h: h.mlat_h, adsb_np: h.adsb_np, day_np: h.day_np, ah: h.ah, x_np: h.x_np, x_ac: h.x_ac}));
     data.hex_updated = j.gnss.updated.replace('T', ' ').replace('Z', '');
     got.gnss = j.gnss.window_h;
   }
@@ -865,6 +865,7 @@ const labelNodes = LABELS.map(L => { const t = el('text', {class: 'country-label
 const gHex = document.getElementById('layer-hex');
 // Second opinions on a Wingbits hexagon: GPS lost outright (MLAT-located aircraft) and the independent ADS-B aggregator NACp
 const hexXLines = x => [
+  ...(x.day_np != null ? [`today (UTC day): NACp ${x.day_np}` + (x.ah ? ` over ${x.ah} aircraft-hours` : '')] : []),
   ...(x.mlat_h ? [`GPS lost: ${x.mlat_h} aircraft-hours located by MLAT only` + (x.adsb_np != null ? ` · ADS-B-only NACp ${x.adsb_np}` : '')] : []),
   ...(x.x_np != null ? [`ADS-B aggregators: NACp ${x.x_np} from ${x.x_ac} aircraft (rolling window)` + (Math.abs(x.x_np - x.np) <= 2 ? ' · agrees' : ' · differs from Wingbits')] : [])];
 let degraded = 0;
