@@ -593,7 +593,7 @@ async function lwMergeLive(data) {
   if (Array.isArray(j.flights)) { data.flights = j.flights.map(put); got.flights = true; }
   if (Array.isArray(j.vessels) && j.vessels.length) { data.vessels = j.vessels.map(put); got.vessels = true; }
   if (j.gnss && Array.isArray(j.gnss.hexes) && j.gnss.hexes.length) {
-    data.hexes = j.gnss.hexes.map(h => ({d: 'M ' + h.b.map(([la, lo]) => X(lo).toFixed(1) + ',' + Y(la).toFixed(1)).join(' L ') + ' Z', np: h.np, samples: h.samples, aircraft: h.aircraft, sev: h.sev}));
+    data.hexes = j.gnss.hexes.map(h => ({d: 'M ' + h.b.map(([la, lo]) => X(lo).toFixed(1) + ',' + Y(la).toFixed(1)).join(' L ') + ' Z', np: h.np, samples: h.samples, aircraft: h.aircraft, sev: h.sev, mlat_h: h.mlat_h, adsb_np: h.adsb_np, x_np: h.x_np, x_ac: h.x_ac}));
     data.hex_updated = j.gnss.updated.replace('T', ' ').replace('Z', '');
     got.gnss = j.gnss.window_h;
   }
@@ -863,6 +863,10 @@ const labelNodes = LABELS.map(L => { const t = el('text', {class: 'country-label
 
 /* ---------- GNSS hexes ---------- */
 const gHex = document.getElementById('layer-hex');
+// Second opinions on a Wingbits hexagon: GPS lost outright (MLAT-located aircraft) and the independent ADS-B aggregator NACp
+const hexXLines = x => [
+  ...(x.mlat_h ? [`GPS lost: ${x.mlat_h} aircraft-hours located by MLAT only` + (x.adsb_np != null ? ` · ADS-B-only NACp ${x.adsb_np}` : '')] : []),
+  ...(x.x_np != null ? [`ADS-B aggregators: NACp ${x.x_np} from ${x.x_ac} aircraft (rolling window)` + (Math.abs(x.x_np - x.np) <= 2 ? ' · agrees' : ' · differs from Wingbits')] : [])];
 let degraded = 0;
 data.hexes.forEach(x => {
   const conf = Math.min(1, x.aircraft / 5);
@@ -870,7 +874,7 @@ data.hexes.forEach(x => {
   const c = hexCentroid(x.d);
   const p = el('path', {class: 'hex', d: x.d, fill: heat(x.sev), opacity: op.toFixed(2)});
   bindTip(p, `NACp ${x.np} · ${coord(c.lat, c.lon)}`, `${x.aircraft} aircraft · ${fmt(x.samples)} samples · severity ${x.sev.toFixed(2)}`);
-  p.addEventListener('click', e => { e.stopPropagation(); select({marker: p, kind: 'GNSS hexagon · Wingbits', title: `NACp ${x.np} · ${coord(c.lat, c.lon)}`, lines: [`${x.aircraft} aircraft · ${fmt(x.samples)} samples`, `severity ${x.sev.toFixed(2)} · ${data.hex_updated.slice(0, 16)} UTC`], links: [LINK.gpsjam(c.x, c.y, true), lk('FR24 GPS jamming map', 'https://www.flightradar24.com/data/gps-jamming'), LINK.osm(c.x, c.y, 9)], source: 'Wingbits NACp aggregate', note: 'GPSJam opens the same day and area for an independent daily view.'}); });
+  p.addEventListener('click', e => { e.stopPropagation(); select({marker: p, kind: 'GNSS hexagon · Wingbits', title: `NACp ${x.np} · ${coord(c.lat, c.lon)}`, lines: [`${x.aircraft} aircraft · ${fmt(x.samples)} samples`, `severity ${x.sev.toFixed(2)} · ${data.hex_updated.slice(0, 16)} UTC`, ...hexXLines(x)], links: [LINK.gpsjam(c.x, c.y, true), lk('FR24 GPS jamming map', 'https://www.flightradar24.com/data/gps-jamming'), LINK.osm(c.x, c.y, 9)], source: 'Wingbits NACp aggregate', note: 'GPSJam opens the same day and area for an independent daily view.'}); });
   gHex.appendChild(p);
   if (x.sev > 0.5) degraded++;
 });

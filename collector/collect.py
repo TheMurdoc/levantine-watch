@@ -230,6 +230,28 @@ def update_gnss(raw: list[dict], state: dict, window_h: float, t_now: datetime) 
     return {"window_h": window_h, "updated": iso(t_now), "hexes": hexes}, status
 
 
+def cross_check_gnss(wb_hexes: list[dict], state: dict) -> int:
+    """Adds the independent ADS-B aggregator NACp (our rolling window) to each Wingbits hexagon as x_np / x_ac.
+    Both grids are H3; they are compared at the coarser of the two resolutions. Returns how many hexagons matched."""
+    import h3
+    if not wb_hexes or not wb_hexes[0].get("h3"):
+        return 0
+    res = min(H3_RES, h3.get_resolution(wb_hexes[0]["h3"]))
+    agg: dict[str, list] = {}
+    for r in state.get("gnss_runs", []):
+        for c, (s, n, ids) in r["cells"].items():
+            e = agg.setdefault(h3.cell_to_parent(c, res) if h3.get_resolution(c) > res else c, [0.0, 0, set()])
+            e[0] += s; e[1] += n; e[2].update(ids)
+    n_x = 0
+    for x in wb_hexes:
+        k = h3.cell_to_parent(x["h3"], res) if h3.get_resolution(x["h3"]) > res else x["h3"]
+        if k in agg:
+            s, n, ids = agg[k]
+            x["x_np"], x["x_ac"] = round(s / n, 2), len(ids)
+            n_x += 1
+    return n_x
+
+
 # ------------------------------------------------------------------ vessels (aisstream.io)
 async def _ais_listen(key: str, seconds: int, cache: dict) -> int:
     import websockets
@@ -432,7 +454,8 @@ def main() -> int:
     wb, wst = extra.fetch_wingbits_gnss(state)
     if wb and wb.get("hexes"):
         live["gnss"] = wb  # Wingbits grid preferred; the ADS-B NACp window keeps accumulating as a fallback
-        st["note"] += " (fallback; Wingbits in use)"
+        n_x = cross_check_gnss(wb["hexes"], state)
+        st["note"] += f" (fallback; Wingbits in use, {n_x} Wingbits hexagons cross-checked against it)"
     live["sources"].append(st)
     if wst:
         live["sources"].append(wst)

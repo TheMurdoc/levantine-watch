@@ -418,8 +418,12 @@ def fetch_wingbits_gnss(state: dict, every_s: int = 1800):
         for hx in j.get("hexes", []):
             npm = float(hx.get("npAvg") or 0)
             b = [[round(la, 4), round(lo, 4)] for la, lo in h3.cell_to_boundary(hx["h3Index"])]
-            hexes.append({"b": b, "np": round(npm, 2), "samples": int(hx.get("sampleCount") or 0), "aircraft": int(hx.get("aircraftCount") or 0),
-                          "sev": round(max(0.0, min(1.0, (9 - npm) / 9)), 3)})
+            # mlatAircraftHours: aircraft that lost GPS entirely and were located by MLAT (Wingbits counts them as NACp 0)
+            mlat_h, ah, anp = hx.get("mlatAircraftHours"), hx.get("aircraftHours"), hx.get("adsbNpAvg")
+            hexes.append({"h3": hx["h3Index"], "b": b, "np": round(npm, 2), "samples": int(hx.get("sampleCount") or 0), "aircraft": int(hx.get("aircraftCount") or 0),
+                          "sev": round(max(0.0, min(1.0, (9 - npm) / 9)), 3),
+                          **({"mlat_h": round(float(mlat_h), 1)} if mlat_h else {}), **({"ah": round(float(ah), 1)} if ah else {}),
+                          **({"adsb_np": round(float(anp), 2)} if anp is not None else {})})
         upd = (j.get("lastUpdated") or "").replace("Z", "")[:19]
         res = {"window_h": 1, "updated": (upd + "Z") if upd else None, "hexes": hexes, "src": "Wingbits"}
         state["wb_gnss"] = res
